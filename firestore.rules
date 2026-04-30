@@ -1,0 +1,152 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == 'ADMIN';
+    }
+
+    function isRepartidor() {
+      return isSignedIn() && getUserRole() == 'REPARTIDOR';
+    }
+
+    // ─── PUBLIC CATALOG (no auth required) ──────────────────────────────────
+
+    // Products: anyone can read active products; only admins can write
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+
+      // Reviews: anyone can read approved reviews; authenticated users can submit
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.keys().hasAll(['userId', 'userName', 'rating', 'comment']);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Categories: public read; admin write
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Brands: public read; admin write
+    match /brands/{brandId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Homepage settings: public read (hero image, social links, delivery toggle);
+    // admin write
+    match /settings/{document} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Notifications: public read; admin write
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── AUTHENTICATED USERS ─────────────────────────────────────────────────
+
+    // Users: each user reads/updates their own doc; admins can read/update all
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      // Favorites: only the owner can manage their own favorites
+      match /favorites/{productId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Carts: only the owner can read/write their own cart
+    match /carts/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Orders: clients create their own; clients read their own;
+    // admins and repartidores read all; only admins update status
+    match /orders/{orderId} {
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin() || isRepartidor());
+      allow update: if isAdmin()
+        || (isRepartidor() && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['repartidorAsignadoId', 'status']));
+      allow delete: if isAdmin();
+    }
+
+    // ─── ADMIN ONLY ──────────────────────────────────────────────────────────
+
+    // Inventory movements: admins read/write; repartidores can read
+    match /inventoryMovements/{movementId} {
+      allow read: if isAdmin() || isRepartidor();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Purchases (supplier orders)
+    match /purchases/{purchaseId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Payment methods: authenticated users can read (needed at checkout);
+    // only admins can write
+    match /paymentMethods/{methodId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Bank accounts: authenticated users can read (shown at checkout);
+    // only admins can write
+    match /bankAccounts/{accountId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Banks catalog: authenticated users can read; admins write
+    match /banks/{bankId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Suppliers
+    match /suppliers/{supplierId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Delivery fees: authenticated users read (calculated at checkout);
+    // admins write
+    match /deliveryFees/{feeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Units of measure & other admin catalogs
+    match /unitsOfMeasure/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
