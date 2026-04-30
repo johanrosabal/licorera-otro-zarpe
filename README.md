@@ -1,274 +1,416 @@
-# E-commerce y Sistema de Gestión "Otro Zarpe"
+# 🍹 E-commerce y Sistema de Gestión "Otro Zarpe"
 
-Este documento proporciona una descripción detallada de la arquitectura, funcionalidades, estructura de datos y flujos de la aplicación "Otro Zarpe".
-
-## 1. Resumen del Proyecto
-
-"Otro Zarpe" es un sistema integral de e-commerce y gestión empresarial (ERP) diseñado para una licorera. La plataforma permite a los clientes explorar y comprar productos en línea, mientras que ofrece un robusto panel de administración para gestionar todos los aspectos del negocio: inventario, finanzas, pedidos, repartos y configuraciones de la tienda.
-
-### Tecnologías Utilizadas
-
-- **Framework:** Next.js (con App Router)
-- **Lenguaje:** JavaScript con JSX
-- **Base de Datos y Backend:** Firebase (Firestore, Authentication, Storage)
-- **UI y Estilos:**
-    - ShadCN UI para componentes base.
-    - Tailwind CSS para estilos personalizados y un enfoque "utility-first".
-    - `lucide-react` para la iconografía.
-    - `next-themes` para la gestión de temas (claro y oscuro).
-- **Gestión de Formularios:** React Hook Form con Zod para una validación de esquemas robusta y segura.
-- **Gestión de Estado:** React Context API (`useContext`) para la gestión del carrito de compras, favoritos y la autenticación de usuarios.
-- **Renderizado de Markdown:** `marked` y `isomorphic-dompurify` para mostrar la documentación del proyecto de forma segura.
+> Sistema integral de e-commerce y ERP (Enterprise Resource Planning) diseñado para una licorera. Permite a los clientes explorar y comprar productos en línea, mientras ofrece un panel de administración completo para gestionar todos los aspectos del negocio.
 
 ---
 
-## 2. Flujos de la Aplicación y Reglas de Lógica
+## 🚀 Stack Tecnológico
 
-### 2.1. Flujo del Cliente
-
-1.  **Navegación y Descubrimiento:**
-    *   El cliente ingresa al sitio y ve una pantalla de bienvenida animada mientras la aplicación carga.
-    *   Luego, ve la página principal con productos destacados y categorías.
-    *   Puede navegar al catálogo completo de productos (`/products`).
-    *   Puede filtrar productos por categoría y buscar por nombre o descripción.
-    *   **Lógica de Stock de Combos:** El stock visible de los productos tipo "combo" (`isBundle: true`) no es un valor fijo, sino que se calcula en tiempo real. El sistema determina cuántos combos se pueden vender basándose en el stock disponible de sus productos componentes. Por ejemplo, si un combo requiere 2 unidades del producto A (stock 10) y 1 del producto B (stock 7), el stock del combo será 5 (el máximo que se puede armar con el producto A).
-
-2.  **Gestión del Carrito:**
-    *   El cliente añade productos al carrito. Un ícono en la barra de navegación muestra la cantidad de ítems.
-    *   Al hacer clic en el carrito, se abre un panel lateral (`CartSheet`) con el resumen de la compra.
-    *   Desde el panel, puede ajustar cantidades, eliminar productos o vaciar el carrito.
-
-3.  **Proceso de Compra (Checkout):**
-    *   Para finalizar la compra, el cliente debe iniciar sesión. Si no lo ha hecho, es redirigido a `/login`.
-    *   En la página de checkout (`/checkout`), se muestra su información (nombre, correo, WhatsApp, ubicación). Puede actualizar su ubicación GPS directamente.
-    *   **Lógica de Costo de Envío:** El costo de envío se calcula dinámicamente en este paso. El sistema utiliza la **fórmula de Haversine** para medir la distancia en kilómetros entre el punto de origen de la tienda (configurado en `settings`) y la ubicación GPS del cliente. Luego, busca en la colección `deliveryFees` el rango de distancia que coincide y aplica la tarifa correspondiente. Si no hay ubicación registrada, no se puede continuar.
-    *   Selecciona un método de pago (Transferencia, SINPE Móvil). Se muestran los detalles de la cuenta asociada.
-    *   Opcionalmente, puede subir un comprobante de pago.
-    *   Al confirmar, se crea la orden y se descuenta el stock de los productos.
-
-4.  **Seguimiento de Órdenes:**
-    *   El cliente puede ver el historial y el estado de sus órdenes en la página "Mis Órdenes" (`/my-orders`).
-    *   Si un repartidor ha sido asignado a su orden, podrá ver el nombre del mismo, aumentando la transparencia.
-
-### 2.2. Flujo del Administrador
-
-1.  **Dashboard Principal (`/admin/dashboard`):**
-    *   Al iniciar sesión, el administrador es recibido por un panel central que ofrece una vista general de la tienda.
-    *   **Métricas Clave:** Tarjetas que resumen las ventas totales del mes, el número de órdenes completadas en el mes, la cantidad de productos con bajo stock y el ticket de venta promedio.
-    *   **Gráfico de Ventas:** Un gráfico de barras visualiza el rendimiento de las ventas durante los últimos 7 días.
-    *   **Actividad Reciente:** Se muestran las 5 órdenes más recientes y una lista de los 5 productos con el inventario más bajo para una acción rápida.
-    *   Desde aquí, puede navegar a las secciones más detalladas del panel.
-
-2.  **Gestión de Órdenes (`/admin/orders`):**
-    *   El administrador ve una lista de todas las órdenes, pudiendo filtrar entre "Activas" e "Historial".
-    *   Puede cambiar el estado de una orden directamente desde la tabla con un menú desplegable.
-    *   Ve el repartidor asignado a cada orden.
-    *   Puede ver el detalle de cada orden, incluyendo el comprobante de pago.
-    *   **Lógica de Cancelación:** Si se marca una orden como `Cancelado`, el sistema ejecuta una transacción que **automáticamente revierte el inventario**. Las unidades de los productos involucrados (incluyendo los componentes individuales de los combos) se devuelven al stock disponible.
-
-3.  **Preparación de Pedidos (`/admin/picking`):**
-    *   Esta pantalla muestra solo las órdenes con estado `Pagado` o `En Preparación`.
-    *   El administrador puede **asignar un repartidor** (con rol `DELIVERY` o `ADMIN`) a cada orden desde un menú desplegable.
-    *   Presenta una vista clara de los productos y cantidades a preparar para cada orden.
-    *   Incluye información de contacto del cliente (WhatsApp) y botones para navegar a la ubicación (Waze, Google Maps).
-    *   **Regla de Envío:** El botón "Marcar como Enviado" permanece deshabilitado hasta que se asigne un repartidor a la orden (`repartidorAsignadoId`).
-
-4.  **Gestión de Envíos (`/admin/shipping`):**
-    *   Muestra las órdenes marcadas como `Enviado`.
-    *   Diseñada para el personal de reparto, con acceso rápido a la información de contacto y ubicación.
-    *   Muestra de forma prominente el tiempo que ha transcurrido desde que la orden fue creada.
-    *   Una vez entregado el pedido, el repartidor lo marca como `Completado`.
-
-5.  **Gestión de Inventario (`/admin/inventory/report`):**
-    *   Muestra un reporte valorizado del inventario (stock actual, costo, valor de venta).
-    *   Permite registrar movimientos manuales (Entradas, Salidas, Ajustes) por razones específicas (ej. merma, donación, conteo físico).
-
-6.  **Gestión de Compras (`/admin/purchases`):**
-    *   Permite registrar facturas de compra a proveedores.
-    *   Al registrar una compra, el sistema **automáticamente actualiza el stock y el precio de costo** de los productos involucrados, generando los movimientos de inventario correspondientes.
-
-7.  **Finanzas y Proyecciones (`/admin/projections`):**
-    *   Calcula el valor total del inventario a precio de venta y costo.
-    *   Proyecta la ganancia potencial si se vendiera todo el stock disponible.
+| Capa | Tecnología |
+|---|---|
+| **Framework** | Next.js 15 (App Router + Turbopack) |
+| **Lenguaje** | JavaScript / JSX |
+| **Base de datos** | Firebase Firestore |
+| **Autenticación** | Firebase Authentication |
+| **Almacenamiento** | Firebase Storage |
+| **UI Componentes** | ShadCN UI + Tailwind CSS |
+| **Iconos** | Lucide React |
+| **Formularios** | React Hook Form + Zod |
+| **Estado Global** | React Context API |
+| **Mapas** | Leaflet (raw, sin react-leaflet) |
+| **Geocodificación** | Nominatim (OpenStreetMap) |
+| **Temas** | next-themes (claro/oscuro) |
+| **Markdown** | marked + isomorphic-dompurify |
+| **QR** | qrcode.react |
+| **Gráficos** | Recharts |
 
 ---
 
-## 3. Estructura de la Base de Datos (Firestore)
+## 📁 Estructura del Proyecto
 
-A continuación, se detallan las colecciones principales y su estructura.
+```
+/
+├── src/
+│   ├── app/                        # Rutas (Next.js App Router)
+│   │   ├── page.jsx                # Página de inicio (pública)
+│   │   ├── not-found.jsx           # Página 404 personalizada en español
+│   │   ├── products/               # Catálogo de productos (público)
+│   │   │   └── [id]/               # Detalle de producto
+│   │   ├── checkout/               # Proceso de compra (requiere auth)
+│   │   ├── my-orders/              # Historial de órdenes del cliente
+│   │   ├── order/                  # Detalle de orden individual
+│   │   ├── favorites/              # Productos favoritos del usuario
+│   │   ├── profile/                # Perfil del usuario
+│   │   ├── share/                  # Página para compartir catálogo (QR)
+│   │   ├── login/                  # Inicio de sesión
+│   │   ├── signup/                 # Registro de usuario
+│   │   ├── forgot-password/        # Recuperación de contraseña
+│   │   └── admin/                  # Panel de administración (ADMIN only)
+│   │       ├── dashboard/          # Métricas y resumen general
+│   │       ├── orders/             # Gestión de órdenes
+│   │       ├── picking/            # Preparación de pedidos
+│   │       ├── shipping/           # Gestión de envíos y repartidores
+│   │       ├── products/           # CRUD de productos
+│   │       ├── inventory/          # Reporte valorizado y movimientos
+│   │       ├── purchases/          # Compras a proveedores
+│   │       ├── sales-report/       # Reporte de ventas
+│   │       ├── projections/        # Proyecciones financieras
+│   │       ├── reviews/            # Moderación de reseñas
+│   │       ├── users/              # Gestión de usuarios y roles
+│   │       ├── categories/         # CRUD de categorías
+│   │       ├── brands/             # CRUD de marcas
+│   │       ├── suppliers/          # CRUD de proveedores
+│   │       ├── banks/              # CRUD de bancos
+│   │       ├── bank-accounts/      # CRUD de cuentas bancarias
+│   │       ├── payment-methods/    # CRUD de métodos de pago
+│   │       ├── delivery-fees/      # Tarifas de envío por distancia
+│   │       ├── units-of-measure/   # Unidades de medida
+│   │       ├── notifications/      # Notificaciones y banners
+│   │       ├── settings/           # Configuración de la tienda
+│   │       ├── error-log/          # Registro de errores
+│   │       └── documentation/      # Documentación interna en Markdown
+│   ├── components/
+│   │   ├── auth/                   # AuthorizedOnly (guard de roles)
+│   │   ├── cart/                   # CartSheet, CartContext
+│   │   ├── layout/                 # Header, Footer, Navbar
+│   │   ├── product/                # ProductDetailModal
+│   │   ├── admin/                  # Componentes del panel admin
+│   │   ├── ui/                     # Componentes ShadCN (Button, Card, etc.)
+│   │   ├── location-picker.jsx     # Selector de ubicación con mapa Leaflet
+│   │   ├── product-card.jsx        # Tarjeta de producto
+│   │   └── categories-carousel.jsx # Carrusel de categorías
+│   ├── hooks/
+│   │   ├── use-auth.jsx            # Contexto de autenticación + rol en tiempo real
+│   │   ├── use-cart.jsx            # Carrito persistido en Firestore
+│   │   ├── use-favorites.jsx       # Favoritos con listener en tiempo real
+│   │   └── use-toast.js            # Sistema de notificaciones toast
+│   └── lib/                        # Servicios y lógica de negocio
+│       ├── firebase.js             # Inicialización de Firebase
+│       ├── orders-service.js       # CRUD órdenes + transacciones de stock
+│       ├── products-service.js     # CRUD productos + subida de imágenes
+│       ├── purchases-service.js    # Compras a proveedores + movimientos
+│       ├── inventory-service.js    # Movimientos manuales de inventario
+│       ├── users-service.js        # Gestión de usuarios y roles
+│       ├── categories.js           # CRUD categorías
+│       ├── brands.js               # CRUD marcas
+│       ├── suppliers.js            # CRUD proveedores
+│       ├── banks.js                # CRUD bancos
+│       ├── bank-accounts.js        # CRUD cuentas bancarias
+│       ├── payment-methods.js      # CRUD métodos de pago
+│       ├── delivery-fees.js        # CRUD tarifas de envío
+│       ├── favorites-service.js    # Favoritos por usuario
+│       ├── reviews-service.js      # Reseñas con moderación
+│       ├── cart-service.js         # Carrito persistido en Firestore
+│       ├── notifications.js        # Notificaciones y banners
+│       ├── settings.js             # Configuración global (homepage)
+│       ├── errors.js               # Logger centralizado de errores
+│       └── utils.js                # Utilidades (Haversine, formatCurrency, etc.)
+├── firestore.rules                 # Reglas de seguridad de Firestore
+├── firebase.json                   # Configuración de Firebase
+└── .env.local                      # Variables de entorno (NO en Git)
+```
 
-### `products`
+---
 
-Almacena todos los productos de la tienda.
+## 👥 Roles de Usuario
 
-| Campo                 | Tipo      | Descripción                                                              |
-| --------------------- | --------- | ------------------------------------------------------------------------ |
-| `name`                | `string`  | Nombre del producto.                                                     |
-| `description`         | `string`  | Descripción detallada del producto.                                      |
-| `costPrice`           | `number`  | Precio de costo (cuánto le cuesta a la tienda).                          |
-| `sellingPrice`        | `number`  | Precio de venta al público.                                              |
-| `stock`               | `number`  | Cantidad de unidades disponibles. Para combos, este campo es `0` o `undefined`. |
-| `category`            | `string`  | Nombre de la categoría a la que pertenece (ej: "Vino Tinto").            |
-| `brand`               | `string`  | Nombre de la marca del producto.                                         |
-| `unitOfMeasure`       | `string`  | Unidad de medida (ej: "Botella 750ml", "Caja x6").                       |
-| `image`               | `string`  | URL de la imagen del producto en Firebase Storage.                       |
-| `active`              | `boolean` | `true` si el producto es visible en la tienda para los clientes.         |
-| `featured`            | `boolean` | `true` si el producto debe aparecer en la sección de destacados.          |
-| `internalOnly`        | `boolean` | `true` si es un ítem de uso interno (no para la venta, ej: bolsas).      |
-| `hasPromotion`        | `boolean` | `true` si tiene un descuento aplicado.                                   |
-| `promotionPercentage` | `number`  | Porcentaje de descuento (ej: `15` para 15% OFF).                         |
-| `taxPercentage`       | `number`  | Porcentaje de impuesto (ej: `13`).                                       |
-| `hasAlcohol`          | `boolean` | `true` si el producto contiene alcohol.                                  |
-| `alcoholGrade`        | `number`  | Grado alcohólico (ej: `40.5`).                                           |
-| `isBundle`            | `boolean` | `true` si es un combo compuesto por otros productos.                     |
-| `bundleItems`         | `array`   | Si `isBundle` es `true`, contiene un arreglo de `{ productId, quantity }`. |
-| `createdBy`           | `map`     | Objeto con `uid` y `email` del usuario que creó el producto.             |
-| `createdAt`           | `timestamp` | Fecha de creación del registro.                                          |
+| Rol | Descripción | Acceso |
+|---|---|---|
+| `CLIENT` | Usuario registrado (default) | Tienda, carrito, checkout, mis órdenes, favoritos |
+| `ADMIN` | Administrador del sistema | Todo lo anterior + panel completo de administración |
+| `REPARTIDOR` | Personal de reparto | Vista de órdenes asignadas, cambio de estado a "Completado" |
 
-### `users`
+---
 
-Almacena la información de los usuarios registrados.
+## 🛒 Flujo del Cliente
 
-| Campo         | Tipo      | Descripción                                                              |
-| ------------- | --------- | ------------------------------------------------------------------------ |
-| `name`        | `string`  | Nombre completo del usuario.                                             |
-| `email`       | `string`  | Correo electrónico (usado para login).                                   |
-| `role`        | `string`  | Rol del usuario: `ADMIN`, `DELIVERY`, `CLIENT`.                          |
-| `whatsapp`    | `string`  | Número de teléfono para contacto y entregas.                             |
-| `locationUrl` | `string`  | URL de Google Maps con la ubicación GPS para entregas.                   |
-| `createdAt`   | `timestamp` | Fecha en que el usuario se registró.                                     |
+### 1. Navegación y Descubrimiento
+- Pantalla de splash animada mientras carga la autenticación.
+- Página de inicio con productos destacados, carrusel de categorías y sección de promociones.
+- Catálogo completo (`/products`) con filtros por categoría, marca y ordenamiento por precio/nombre.
+- **Stock de combos calculado en tiempo real:** el stock de un bundle se calcula como el mínimo de combos posibles según el stock de sus componentes. Ejemplo: combo requiere 2×Producto A (stock 10) y 1×Producto B (stock 7) → stock del combo = 5.
 
-### `orders`
+### 2. Carrito de Compras
+- Panel lateral (`CartSheet`) con resumen de compra.
+- Ajuste de cantidades, eliminación de ítems y vaciado total.
+- Carrito persistido en Firestore: se mantiene entre sesiones y dispositivos.
+- Para usuarios no autenticados, el carrito se guarda en `localStorage` y se fusiona al iniciar sesión.
 
-Contiene el registro de todas las órdenes generadas por los clientes.
+### 3. Checkout
+- Requiere autenticación. Si no hay sesión, redirige a `/login?redirect=/checkout`.
+- Visualización y actualización de ubicación GPS mediante dos métodos:
+  - **GPS del dispositivo:** botón que obtiene coordenadas automáticamente.
+  - **Selector de mapa interactivo:** mapa Leaflet con marcador arrastrable y búsqueda de dirección por texto (Nominatim).
+- **Cálculo de costo de envío:** utiliza la fórmula de Haversine para calcular la distancia en km entre el origen de la tienda (configurado en `/admin/settings`) y la ubicación del cliente. Luego aplica la tarifa del rango correspondiente en `deliveryFees`.
+- Selección de método de pago con visualización de cuentas bancarias (IBAN, SINPE Móvil).
+- Código de referencia único generado por orden para identificar el pago.
+- Subida opcional de comprobante de pago (imagen).
+- Al confirmar: se crea la orden en Firestore, se descuenta el stock en transacción atómica y se limpia el carrito.
 
-| Campo                 | Tipo      | Descripción                                                              |
-| --------------------- | --------- | ------------------------------------------------------------------------ |
-| `userId`              | `string`  | ID del usuario que realizó la orden.                                     |
-| `userName`            | `string`  | Nombre del usuario al momento de la compra.                              |
-| `items`               | `array`   | Arreglo de objetos, cada uno con `id`, `name`, `quantity`, `price`, `image`. |
-| `subtotal`            | `number`  | Suma de los precios de los productos antes de envío.                     |
-| `deliveryFee`         | `number`  | Costo de envío calculado.                                                |
-| `total`               | `number`  | Monto total de la orden (`subtotal` + `deliveryFee`).                    |
-| `status`              | `string`  | Estado actual: `Pendiente de Confirmacion de Pago`, `Pagado`, `En Preparación`, `Enviado`, `Completado`, `Cancelado`. |
-| `paymentMethod`       | `map`     | Objeto con `id` y `name` del método de pago.                             |
-| `paymentReceiptUrl`   | `string`  | URL de la imagen del comprobante de pago (opcional).                     |
-| `repartidorAsignadoId`| `string`  | ID del usuario (repartidor) asignado a la orden. `null` si no hay ninguno. |
-| `createdAt`           | `timestamp` | Fecha de creación de la orden.                                           |
-| `invoiceNumber`       | `string`  | Número de factura consecutivo.                                           |
+### 4. Seguimiento de Órdenes
+- Historial completo en `/my-orders` con estado en tiempo real.
+- Vista de detalle en `/order/[id]` con información del repartidor asignado.
 
-### `purchases`
+---
 
-Registra las facturas de compra a proveedores.
+## 🔧 Panel de Administración
 
-| Campo           | Tipo      | Descripción                                                              |
-| --------------- | --------- | ------------------------------------------------------------------------ |
-| `supplierId`    | `string`  | ID del proveedor al que se le realizó la compra.                         |
-| `invoiceNumber` | `string`  | Número de la factura emitida por el proveedor.                           |
-| `invoiceDate`   | `timestamp` | Fecha de la factura.                                                     |
-| `items`         | `array`   | Arreglo de productos comprados (`productId`, `quantity`, `costPrice`).   |
-| `totalAmount`   | `number`  | Monto total de la factura.                                               |
-| `invoiceImageUrl`| `string`  | URL de la imagen de la factura (opcional).                               |
-| `createdBy`     | `map`     | `uid` y `email` del admin que registró la compra.                        |
+### Dashboard (`/admin/dashboard`)
+- Tarjetas de KPIs: ventas del mes, órdenes completadas, productos con bajo stock, ticket promedio.
+- Gráfico de barras con ventas de los últimos 7 días (Recharts).
+- Tabla de últimas 5 órdenes y top 5 productos con menor stock.
 
-### `inventoryMovements`
+### Órdenes (`/admin/orders`)
+- Vista filtrada entre "Activas" e "Historial".
+- Cambio de estado directo con menú desplegable.
+- **Cancelación con reversión automática de stock:** si se cancela una orden, una transacción Firestore devuelve el stock de todos los productos y componentes de combos involucrados, y registra los movimientos de inventario correspondientes.
 
-Log detallado de cada cambio en el stock de un producto.
+### Preparación de Pedidos — Picking (`/admin/picking`)
+- Muestra órdenes en estado `Pagado` o `En Preparación`.
+- Asignación de repartidor desde un selector.
+- Información de contacto del cliente (WhatsApp) y botones de navegación (Waze/Google Maps).
+- El botón "Marcar como Enviado" está bloqueado hasta que se asigne un repartidor.
 
-| Campo         | Tipo      | Descripción                                                              |
-| ------------- | --------- | ------------------------------------------------------------------------ |
-| `productId`   | `string`  | ID del producto afectado.                                                |
-| `type`        | `string`  | Tipo de movimiento: `ENTRADA`, `SALIDA`, `AJUSTE`.                         |
-| `quantity`    | `number`  | Cantidad movida (positiva para entradas, negativa para salidas).         |
-| `reason`      | `string`  | Motivo del movimiento (ej: "Venta - Orden #00123", "Ajuste por merma").  |
-| `previousStock`| `number`  | Stock antes del movimiento.                                              |
-| `newStock`    | `number`  | Stock después del movimiento.                                            |
-| `userId`      | `string`  | ID del usuario responsable.                                              |
-| `createdAt`   | `timestamp` | Fecha del movimiento.                                                    |
+### Envíos (`/admin/shipping`)
+- Órdenes en estado `Enviado` con tiempo transcurrido desde la creación.
+- Vista optimizada para repartidores: contacto y ubicación del cliente.
+- Acción para marcar como `Completado`.
 
-### `deliveryFees`
+### Gestión de Productos (`/admin/products`)
+- CRUD completo con subida de imagen a Firebase Storage.
+- Soporte para productos simples, combos/bundles e ítems de uso interno.
+- Campos: nombre, descripción, precio costo, precio venta, stock, categoría, marca, unidad de medida, grado alcohólico, porcentaje impuesto, promoción, ribbon, estado activo/inactivo.
 
-Define las tarifas de envío basadas en la distancia.
+### Inventario (`/admin/inventory`)
+- Reporte valorizado del inventario (stock × precio costo / precio venta).
+- Registro de movimientos manuales: ENTRADA, SALIDA, AJUSTE con razón obligatoria.
+- Historial completo de movimientos con filtros.
 
-| Campo       | Tipo      | Descripción                                                |
-| ----------- | --------- | ---------------------------------------------------------- |
-| `fromKm`    | `number`  | Límite inferior del rango de distancia en kilómetros (inclusivo). |
-| `toKm`      | `number`  | Límite superior del rango de distancia en kilómetros (exclusivo). |
-| `fee`       | `number`  | Costo del envío en colones para ese rango.                 |
-| `createdAt` | `timestamp` | Fecha de creación del registro.                            |
+### Compras a Proveedores (`/admin/purchases`)
+- Registro de facturas de compra con múltiples ítems.
+- Actualización automática de stock y precio de costo al registrar.
+- Subida de imagen de factura.
+- Edición y eliminación con reversión de movimientos de inventario.
 
-### `settings`
+### Reporte de Ventas (`/admin/sales-report`)
+- Análisis de ventas por período con métricas detalladas.
 
-Almacena configuraciones globales de la aplicación.
+### Proyecciones Financieras (`/admin/projections`)
+- Valor total del inventario a precio de costo y venta.
+- Ganancia potencial proyectada.
 
-| Documento ID | Campo               | Tipo     | Descripción                                                            |
-| ------------ | ------------------- | -------- | ---------------------------------------------------------------------- |
-| `homepage`   | `heroImageUrl`      | `string` | URL de la imagen principal del banner de la página de inicio.          |
-| `homepage`   | `facebookUrl`       | `string` | URL del perfil de Facebook.                                            |
-| `homepage`   | `instagramUrl`      | `string` | URL del perfil de Instagram.                                           |
-| `homepage`   | `twitterUrl`        | `string` | URL del perfil de Twitter/X.                                           |
-| `homepage`   | `whatsappUrl`       | `string` | URL del chat de WhatsApp para contacto.                                |
-| `homepage`   | `deliveryOriginLat` | `number` | Latitud del punto de partida para calcular los envíos.                 |
-| `homepage`   | `deliveryOriginLng` | `number` | Longitud del punto de partida para calcular los envíos.                |
+### Reseñas (`/admin/reviews`)
+- Moderación de reseñas de productos.
+- Aprobación/rechazo de reseñas antes de publicarse.
+
+### Usuarios (`/admin/users`)
+- Lista de todos los usuarios registrados.
+- Cambio de rol (CLIENT → ADMIN → REPARTIDOR).
+
+### Configuración (`/admin/settings`)
+- Imagen hero de la página de inicio.
+- URLs de redes sociales (Facebook, Instagram, Twitter, WhatsApp).
+- Coordenadas del punto de origen para cálculo de envíos.
+- Activar/desactivar entregas a domicilio.
+
+### Catálogos Admin
+| Sección | Descripción |
+|---|---|
+| `/admin/categories` | CRUD de categorías con imagen |
+| `/admin/brands` | CRUD de marcas |
+| `/admin/suppliers` | CRUD de proveedores |
+| `/admin/banks` | CRUD de bancos |
+| `/admin/bank-accounts` | Cuentas con IBAN y SINPE Móvil |
+| `/admin/payment-methods` | Métodos de pago vinculados a cuentas |
+| `/admin/delivery-fees` | Tarifas de envío por rango de km |
+| `/admin/units-of-measure` | Unidades de medida |
+| `/admin/notifications` | Banners y notificaciones públicas |
+| `/admin/error-log` | Log centralizado de errores del sistema |
+| `/admin/documentation` | Documentación interna en Markdown |
+
+---
+
+## 🔒 Seguridad (Firestore Rules)
+
+Las reglas de seguridad siguen el principio de **mínimo privilegio**:
+
+| Colección | Lectura | Escritura |
+|---|---|---|
+| `products`, `categories`, `brands`, `settings`, `notifications` | **Pública** (sin auth) | Solo ADMIN |
+| `products/*/reviews` | **Pública** | Cliente autenticado (solo su propia reseña) |
+| `users/{uid}` | Propio usuario o ADMIN | Propio usuario o ADMIN |
+| `users/{uid}/favorites` | Solo el dueño | Solo el dueño |
+| `carts/{uid}` | Solo el dueño | Solo el dueño |
+| `orders` | Cliente ve las suyas; ADMIN/REPARTIDOR ven todas | Cliente crea las suyas; ADMIN actualiza |
+| `paymentMethods`, `bankAccounts`, `banks`, `deliveryFees` | Autenticado | Solo ADMIN |
+| `inventoryMovements`, `purchases`, `suppliers` | ADMIN / REPARTIDOR | Solo ADMIN |
+
+---
+
+## 🗄️ Estructura de la Base de Datos (Firestore)
+
+### `products/{productId}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `name` | `string` | Nombre del producto |
+| `description` | `string` | Descripción detallada |
+| `costPrice` | `number` | Precio de costo |
+| `sellingPrice` | `number` | Precio de venta al público |
+| `stock` | `number` | Unidades disponibles (0 para combos) |
+| `category` | `string` | Nombre de la categoría |
+| `brand` | `string` | Nombre de la marca |
+| `unitOfMeasure` | `string` | Unidad de medida |
+| `image` | `string` | URL en Firebase Storage |
+| `active` | `boolean` | Visible en tienda |
+| `featured` | `boolean` | Aparece en destacados |
+| `isTestProduct` | `boolean` | Solo visible para ADMIN |
+| `internalOnly` | `boolean` | Ítem interno, no para la venta |
+| `hasPromotion` | `boolean` | Tiene descuento activo |
+| `promotionPercentage` | `number` | Porcentaje de descuento |
+| `taxPercentage` | `number` | Porcentaje de impuesto |
+| `hasAlcohol` | `boolean` | Contiene alcohol |
+| `alcoholGrade` | `number` | Grado alcohólico |
+| `isBundle` | `boolean` | Es un combo/bundle |
+| `bundleItems` | `array` | `[{ productId, quantity }]` |
+| `ribbon` | `string` | Etiqueta visual (Nuevo, Oferta, etc.) |
+| `createdBy` / `updatedBy` | `map` | `{ uid, email }` del responsable |
+
+**Subcolección:** `products/{productId}/reviews/{reviewId}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `userId` | `string` | ID del autor |
+| `userName` | `string` | Nombre del autor |
+| `rating` | `number` | Calificación (1-5) |
+| `comment` | `string` | Texto de la reseña |
+| `isApproved` | `boolean` | Aprobada por admin |
+
+### `users/{userId}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `name` | `string` | Nombre completo |
+| `email` | `string` | Correo electrónico |
+| `role` | `string` | `CLIENT` / `ADMIN` / `REPARTIDOR` |
+| `whatsapp` | `string` | Número de WhatsApp |
+| `locationUrl` | `string` | URL de Google Maps con coordenadas GPS |
+
+**Subcolección:** `users/{userId}/favorites/{productId}`
+
+### `carts/{userId}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `items` | `array` | `[{ id, name, quantity, sellingPrice, image }]` |
+| `updatedAt` | `timestamp` | Última actualización |
+
+### `orders/{orderId}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `invoiceNumber` | `string` | Número consecutivo (ej: `000123`) |
+| `userId` | `string` | ID del cliente |
+| `userName` / `userEmail` | `string` | Datos del cliente |
+| `whatsapp` | `string` | Teléfono del cliente |
+| `locationUrl` | `string` | URL de ubicación del cliente |
+| `items` | `array` | `[{ id, name, quantity, price, image }]` |
+| `subtotal` | `number` | Total sin envío |
+| `deliveryFee` | `number` | Costo de envío |
+| `total` | `number` | Total final |
+| `paymentMethod` | `map` | `{ id, name }` |
+| `paymentReceiptUrl` | `string` | URL del comprobante (opcional) |
+| `paymentReference` | `string` | Código de referencia único del pago |
+| `status` | `string` | `Pendiente de Confirmacion de Pago` / `Pagado` / `En Preparación` / `Enviado` / `Completado` / `Cancelado` |
+| `repartidorAsignadoId` | `string` | UID del repartidor asignado |
+
+### `inventoryMovements/{id}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `productId` | `string` | ID del producto afectado |
+| `type` | `string` | `ENTRADA` / `SALIDA` / `AJUSTE` |
+| `quantity` | `number` | Cantidad (negativa para salidas) |
+| `reason` | `string` | Motivo del movimiento |
+| `previousStock` / `newStock` | `number` | Stock antes y después |
+| `orderId` / `purchaseId` | `string` | Referencia al documento origen |
+| `userId` / `userEmail` | `string` | Responsable del movimiento |
+
+### `purchases/{id}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `supplierId` | `string` | ID del proveedor |
+| `invoiceNumber` | `string` | Número de factura del proveedor |
+| `invoiceDate` | `timestamp` | Fecha de la factura |
+| `items` | `array` | `[{ productId, name, quantity, costPrice, taxPercentage }]` |
+| `totalAmount` | `number` | Monto total |
+| `invoiceImageUrl` | `string` | URL de la imagen de factura |
+
+### `deliveryFees/{id}`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `fromKm` | `number` | Límite inferior del rango (km) |
+| `toKm` | `number` | Límite superior del rango (km) |
+| `fee` | `number` | Tarifa en colones |
+
+### `settings/homepage`
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `heroImageUrl` | `string` | Imagen principal del banner |
+| `facebookUrl` / `instagramUrl` / `twitterUrl` / `whatsappUrl` | `string` | Redes sociales |
+| `deliveryOriginLat` / `deliveryOriginLng` | `number` | Coordenadas de origen de envíos |
+| `deliveriesEnabled` | `boolean` | Activar/desactivar entregas |
 
 ### Catálogos Auxiliares
-
-Estas colecciones sirven para poblar selectores y mantener la consistencia de los datos.
-
--   **`categories`**: Almacena las categorías de productos (`name`, `active`, `imageUrl`).
--   **`brands`**: Almacena las marcas de productos (`name`, `active`).
--   **`unitsOfMeasure`**: Almacena las unidades de medida (`name`, `active`).
--   **`suppliers`**: Información de los proveedores (`name`, `contactPerson`, `phone`, `email`, `active`).
--   **`banks`**: Información de las entidades bancarias (`name`, `country`, `active`).
--   **`bankAccounts`**: Cuentas bancarias de la empresa (`bankId`, `accountHolder`, `accountNumber`, `sinpeMovil`, `active`).
--   **`paymentMethods`**: Métodos de pago ofrecidos al cliente (`name`, `type`, `bankAccountId`, `active`).
+- **`categories`**: `name`, `active`, `imageUrl`
+- **`brands`**: `name`, `active`
+- **`unitsOfMeasure`**: `name`, `active`
+- **`suppliers`**: `name`, `contactPerson`, `phone`, `email`, `active`
+- **`banks`**: `name`, `active`
+- **`bankAccounts`**: `bankId`, `accountHolder`, `iban`, `sinpeMovil`, `currency`, `active`
+- **`paymentMethods`**: `name`, `active`, `order`, `bankAccountId`, `instructions`
+- **`notifications`**: `type`, `active`, `createdAt`
 
 ---
 
-## 4. Estructura del Proyecto e Instalación
+## ⚙️ Instalación y Configuración
 
-### Estructura de Carpetas
-
-```
-/src
-├── app/                  # Rutas (App Router de Next.js)
-│   ├── (public)/         # Rutas públicas (/, /products, /login)
-│   ├── admin/            # Rutas protegidas del panel de administración
-│   └── api/              # Rutas de API (si fueran necesarias)
-├── components/           # Componentes React reutilizables
-│   ├── admin/            # Componentes específicos del panel de admin
-│   ├── auth/             # Componentes de autorización
-│   ├── cart/             # Componentes del carrito
-│   ├── layout/           # Componentes de la estructura (Header, Footer)
-│   └── ui/               # Componentes de ShadCN (Button, Card, etc.)
-├── hooks/                # Hooks personalizados (useAuth, useCart)
-├── lib/                  # Lógica de negocio y servicios
-│   ├── firebase.js       # Configuración e inicialización de Firebase
-│   └── *-service.js      # Archivos de servicio para interactuar con Firestore
-└── styles/
-    └── globals.css       # Estilos globales y variables de Tailwind/ShadCN para temas claro y oscuro.
+### 1. Clonar e instalar dependencias
+```bash
+git clone https://github.com/johanrosabal/licorera-otro-zarpe.git
+cd licorera-otro-zarpe
+npm install
 ```
 
-### Cómo Empezar
+### 2. Variables de entorno
+Crea el archivo `.env.local` en la raíz:
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+```
 
-1.  **Instalar Dependencias:**
-    ```bash
-    npm install
-    ```
+### 3. Configurar Firestore
+Despliega las reglas de seguridad:
+```bash
+firebase deploy --only firestore:rules
+```
 
-2.  **Configurar Variables de Entorno:**
-    Crea un archivo `.env.local` en la raíz del proyecto y añade tus credenciales de Firebase:
-    ```
-    NEXT_PUBLIC_FIREBASE_API_KEY=...
-    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
-    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
-    NEXT_PUBLIC_FIREBASE_APP_ID=...
-    ```
+### 4. Ejecutar en desarrollo
+```bash
+npm run dev
+# La app estará en http://localhost:9002
+```
 
-3.  **Ejecutar el Servidor de Desarrollo:**
-    ```bash
-    npm run dev
-    ```
-    La aplicación estará disponible en `http://localhost:9002`.
+### 5. Build de producción
+```bash
+npm run build
+npm run start
+```
+
+---
+
+## 📝 Notas Técnicas
+
+- **Mapas:** Se usa Leaflet directamente (sin `react-leaflet`) para evitar incompatibilidades con React 18 StrictMode (`Map container is already initialized`).
+- **Stock de combos:** Se calcula en el frontend en tiempo real — nunca se persiste en Firestore para evitar inconsistencias.
+- **Transacciones atómicas:** La creación de órdenes, cancelaciones y compras usan `runTransaction` de Firestore para garantizar consistencia entre el documento principal y los movimientos de inventario.
+- **Carrito híbrido:** Los usuarios no autenticados usan `localStorage`; al iniciar sesión, el carrito local se fusiona con el de Firestore.
+- **Roles en tiempo real:** `useAuth` usa `onSnapshot` sobre el documento del usuario, por lo que un cambio de rol por el administrador se refleja inmediatamente sin necesidad de cerrar sesión.
