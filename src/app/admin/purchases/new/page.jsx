@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CalendarIcon, PlusCircle, Trash2, Loader2, Save, Upload, X, Search } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { cn, formatCurrency, formatCurrencyInput, parseFormattedCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -40,6 +41,7 @@ const purchaseSchema = z.object({
   supplierId: z.string().min(1, 'Debes seleccionar un proveedor.'),
   invoiceNumber: z.string().min(1, 'El número de factura es requerido.'),
   invoiceDate: z.date({ required_error: 'La fecha de la factura es requerida.' }),
+  taxesIncluded: z.boolean().default(false),
   items: z.array(purchaseItemSchema).min(1, 'Debes agregar al menos un producto a la compra.'),
   invoiceImage: z.any().optional(),
 });
@@ -77,6 +79,7 @@ function ProductSelector({ products, field, onProductChange, index }) {
                 className="pl-9 h-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
               />
             </div>
           </div>
@@ -91,6 +94,59 @@ function ProductSelector({ products, field, onProductChange, index }) {
     </FormItem>
   );
 }
+
+/**
+ * CurrencyInput: maintains a raw local string while the user types,
+ * only formats (adds thousand commas) on blur.
+ * This prevents the period from being swallowed when typing decimals.
+ */
+function CurrencyInput({ value, onChange, className }) {
+  const [display, setDisplay] = React.useState('');
+  const isFocused = React.useRef(false);
+
+  // Sync external value changes (e.g. when a product is auto-selected) only when not focused
+  React.useEffect(() => {
+    if (!isFocused.current) {
+      setDisplay(value !== undefined && value !== null && value !== 0 ? formatCurrencyInput(value) : '');
+    }
+  }, [value]);
+
+  const handleChange = (e) => {
+    // Allow only digits, commas and ONE period
+    const raw = e.target.value.replace(/[^0-9.,]/g, '');
+    setDisplay(raw);
+    // Remove commas before parsing so "1,234.56" → 1234.56
+    const parsed = parseFloat(raw.replace(/,/g, '')) || 0;
+    onChange(parsed);
+  };
+
+  const handleFocus = () => {
+    isFocused.current = true;
+    // Show raw number (strip commas) so the user can edit it directly
+    const raw = String(value ?? '').replace(/,/g, '');
+    setDisplay(raw === '0' ? '' : raw);
+  };
+
+  const handleBlur = () => {
+    isFocused.current = false;
+    const parsed = parseFloat(display.replace(/,/g, '')) || 0;
+    setDisplay(formatCurrencyInput(parsed));
+    onChange(parsed);
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      className={cn('text-right', className)}
+      value={display}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    />
+  );
+}
+
 
 export default function NewPurchasePage() {
   const [suppliers, setSuppliers] = useState([]);
@@ -108,6 +164,7 @@ export default function NewPurchasePage() {
       supplierId: '',
       invoiceNumber: '',
       invoiceDate: new Date(),
+      taxesIncluded: false,
       items: [{ productId: '', quantity: 1, costPrice: 0, taxPercentage: 0 }],
       invoiceImage: undefined,
     },
@@ -185,19 +242,32 @@ export default function NewPurchasePage() {
     }
   };
 
-  const calculateTotals = (items) => {
-    const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.costPrice || 0), 0);
-    const taxAmount = items.reduce((acc, item) => {
-        const itemSubtotal = (item.quantity * item.costPrice || 0);
-        const itemTax = itemSubtotal * ((item.taxPercentage || 0) / 100);
-        return acc + itemTax;
-    }, 0);
-    const totalAmount = subtotal + taxAmount;
-    return { subtotalAmount: subtotal, taxAmount, totalAmount };
+  const calculateTotals = (items, taxesIncluded) => {
+    if (taxesIncluded) {
+      // Prices include tax: extract tax from gross price
+      // Net = gross / (1 + tax%), Tax = gross - net
+      const totalGross = items.reduce((acc, item) => acc + ((item.quantity || 0) * (item.costPrice || 0)), 0);
+      const taxAmount = items.reduce((acc, item) => {
+        const gross = (item.quantity || 0) * (item.costPrice || 0);
+        const taxRate = (item.taxPercentage || 0) / 100;
+        return acc + (taxRate > 0 ? gross * taxRate / (1 + taxRate) : 0);
+      }, 0);
+      const subtotal = totalGross - taxAmount;
+      return { subtotalAmount: subtotal, taxAmount, totalAmount: totalGross };
+    } else {
+      // Prices are net: add tax on top
+      const subtotal = items.reduce((acc, item) => acc + ((item.quantity || 0) * (item.costPrice || 0)), 0);
+      const taxAmount = items.reduce((acc, item) => {
+        const itemSubtotal = (item.quantity || 0) * (item.costPrice || 0);
+        return acc + itemSubtotal * ((item.taxPercentage || 0) / 100);
+      }, 0);
+      return { subtotalAmount: subtotal, taxAmount, totalAmount: subtotal + taxAmount };
+    }
   }
   
   const watchedItems = form.watch('items');
-  const { subtotalAmount, taxAmount, totalAmount } = calculateTotals(watchedItems);
+  const watchedTaxesIncluded = form.watch('taxesIncluded');
+  const { subtotalAmount, taxAmount, totalAmount } = calculateTotals(watchedItems, watchedTaxesIncluded);
 
   if (loading) {
     return (
@@ -283,6 +353,27 @@ export default function NewPurchasePage() {
                 />
               </div>
 
+              {/* Taxes Included Switch */}
+              <FormField
+                control={form.control}
+                name="taxesIncluded"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 bg-muted/30">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base font-semibold">Impuestos incluidos en el precio unitario</FormLabel>
+                      <p className="text-sm text-muted-foreground">
+                        {field.value
+                          ? '✔ El costo unitario ya incluye el IVA. Se extraerá automáticamente del precio.'
+                          : 'El costo unitario es precio neto. El IVA se sumará encima del subtotal.'}
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
                <FormField
                 control={form.control}
                 name="invoiceImage"
@@ -355,18 +446,28 @@ export default function NewPurchasePage() {
                     <TableRow>
                       <TableHead className="w-[30%]">Producto</TableHead>
                       <TableHead>Cantidad</TableHead>
-                      <TableHead>Costo Unitario</TableHead>
-                      <TableHead>Subtotal</TableHead>
+                      <TableHead>
+                        Costo Unitario
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          {watchedTaxesIncluded ? '(IVA incluido)' : '(sin IVA)'}
+                        </span>
+                      </TableHead>
+                      <TableHead>Subtotal Neto</TableHead>
                       <TableHead className="text-center">Imp. (%)</TableHead>
-                      <TableHead>Impuesto (Monto)</TableHead>
+                      <TableHead className="text-right">Impuesto (Monto)</TableHead>
+                      <TableHead className="text-right font-semibold">Subtotal Bruto</TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {fields.map((item, index) => {
                       const itemValues = watchedItems[index] || {};
-                      const itemSubtotal = (itemValues.quantity || 0) * (itemValues.costPrice || 0);
-                      const itemTaxAmount = itemSubtotal * ((itemValues.taxPercentage || 0) / 100);
+                      const gross = (itemValues.quantity || 0) * (itemValues.costPrice || 0);
+                      const taxRate = (itemValues.taxPercentage || 0) / 100;
+                      const itemTaxAmount = watchedTaxesIncluded
+                        ? (taxRate > 0 ? gross * taxRate / (1 + taxRate) : 0)
+                        : gross * taxRate;
+                      const itemSubtotal = watchedTaxesIncluded ? gross - itemTaxAmount : gross;
                       return (
                       <TableRow key={item.id}>
                         <TableCell>
@@ -399,16 +500,7 @@ export default function NewPurchasePage() {
                             render={({ field }) => (
                                 <FormItem>
                                 <FormControl>
-                                <Input
-                                    type="text"
-                                    className="text-right"
-                                    value={formatCurrencyInput(field.value ?? '')}
-                                    onChange={(e) => {
-                                        const rawValue = e.target.value;
-                                        const parsedValue = parseFormattedCurrency(rawValue);
-                                        field.onChange(parsedValue);
-                                    }}
-                                />
+                                  <CurrencyInput value={field.value} onChange={field.onChange} />
                                 </FormControl>
                                 <FormMessage />
                                 </FormItem>
@@ -423,6 +515,9 @@ export default function NewPurchasePage() {
                         </TableCell>
                         <TableCell className="text-right">
                             {formatCurrency(itemTaxAmount)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                            {formatCurrency(itemSubtotal + itemTaxAmount)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}>
@@ -439,7 +534,13 @@ export default function NewPurchasePage() {
                 <div className="space-y-4 md:hidden">
                     {fields.map((item, index) => {
                         const itemValues = watchedItems[index] || {};
-                        const itemSubtotal = (itemValues.quantity || 0) * (itemValues.costPrice || 0);
+                        const gross = (itemValues.quantity || 0) * (itemValues.costPrice || 0);
+                        const taxRate = (itemValues.taxPercentage || 0) / 100;
+                        const itemTaxAmountMobile = watchedTaxesIncluded
+                          ? (taxRate > 0 ? gross * taxRate / (1 + taxRate) : 0)
+                          : gross * taxRate;
+                        const itemSubtotalMobile = watchedTaxesIncluded ? gross - itemTaxAmountMobile : gross;
+                        const itemGrossMobile = itemSubtotalMobile + itemTaxAmountMobile;
                         return (
                             <Card key={item.id} className="relative">
                                 <Button type="button" variant="ghost" size="icon" className="absolute top-2 right-2 z-10" onClick={() => remove(index)} disabled={fields.length <= 1}>
@@ -471,20 +572,15 @@ export default function NewPurchasePage() {
                                                 <FormItem>
                                                     <FormLabel>Costo Unit.</FormLabel>
                                                     <FormControl>
-                                                        <Input
-                                                            type="text"
-                                                            className="text-right"
-                                                            value={formatCurrencyInput(field.value ?? '')}
-                                                            onChange={(e) => field.onChange(parseFormattedCurrency(e.target.value))}
-                                                        />
+                                                      <CurrencyInput value={field.value} onChange={field.onChange} />
                                                     </FormControl>
                                                     <FormMessage />
                                                 </FormItem>
                                             )}
                                         />
                                     </div>
-                                    <div className="text-right font-medium text-muted-foreground">
-                                        Subtotal: {formatCurrency(itemSubtotal)}
+                                    <div className="text-right font-semibold">
+                                        Subtotal Bruto: {formatCurrency(itemGrossMobile)}
                                     </div>
                                 </CardContent>
                             </Card>

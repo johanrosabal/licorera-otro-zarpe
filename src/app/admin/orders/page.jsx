@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import Image from 'next/image';
 import { Separator } from '@/components/ui/separator';
 import Link from 'next/link';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -37,6 +37,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/hooks/use-auth';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { getHomepageSettings } from '@/lib/settings';
 
 
 function WhatsAppIcon(props) {
@@ -59,18 +62,28 @@ function WhatsAppIcon(props) {
 }
 
 const statusConfig = {
-    'Pendiente de Confirmacion de Pago': { icon: Clock, color: 'bg-yellow-400 text-black dark:bg-yellow-400 dark:text-black', textColor: 'text-yellow-800' },
+    'Pendiente': { icon: Clock, color: 'bg-orange-500 text-white dark:bg-orange-600 dark:text-white', textColor: 'text-orange-900' },
     'Pagado': { icon: CheckCircle, color: 'bg-green-500/20', textColor: 'text-green-700 dark:text-green-400' },
     'En Preparación': { icon: PackageCheck, color: 'bg-cyan-500/20', textColor: 'text-cyan-700 dark:text-cyan-400' },
     'Enviado': { icon: Truck, color: 'bg-blue-500/20', textColor: 'text-blue-700 dark:text-blue-400' },
     'Completado': { icon: CheckCircle, color: 'bg-primary/20', textColor: 'text-primary' },
-    'Cancelado': { icon: XCircle, color: 'bg-red-500/20', textColor: 'text-red-700 dark:text-red-400' }
+    'Cancelado': { icon: XCircle, color: 'bg-red-500/20', textColor: 'text-red-700 dark:text-red-400' },
+    // Legacy support (to be treated as Pendiente in UI if needed, but keeping for data compatibility)
+    'Verificar Pago': { icon: Clock, color: 'bg-orange-500 text-white', textColor: 'text-orange-900' },
+    'Pendiente de Pago': { icon: Clock, color: 'bg-orange-500 text-white', textColor: 'text-orange-900' },
+    'Pendiente de Confirmacion de Pago': { icon: Clock, color: 'bg-orange-500 text-white', textColor: 'text-orange-900' },
+    'En verificación': { icon: Clock, color: 'bg-orange-500 text-white', textColor: 'text-orange-900' },
 };
 
-const ALLOWED_MANUAL_STATUSES = Object.keys(statusConfig).filter(status => status !== 'Pagado');
+const ALLOWED_MANUAL_STATUSES = ['Pendiente', 'Pagado', 'En Preparación', 'Enviado', 'Completado', 'Cancelado'];
 
 function StatusSelector({ order, onStatusChange }) {
-    const config = statusConfig[order.status] || { icon: Clock, color: 'bg-gray-500' };
+    // Determine the active display status (handling legacy ones)
+    const displayStatus = ['Pendiente de Pago', 'Pendiente de Confirmacion de Pago', 'En verificación', 'Verificar Pago'].includes(order.status) 
+        ? 'Pendiente' 
+        : order.status;
+
+    const config = statusConfig[displayStatus] || { icon: Clock, color: 'bg-gray-500' };
     const Icon = config.icon;
 
     return (
@@ -79,7 +92,7 @@ function StatusSelector({ order, onStatusChange }) {
                 <SelectValue>
                     <div className="flex items-center gap-2">
                         <Icon className="h-4 w-4" />
-                        <span>{order.status}</span>
+                        <span>{displayStatus}</span>
                     </div>
                 </SelectValue>
             </SelectTrigger>
@@ -125,8 +138,8 @@ function OrderDetailModal({ order, onClose }) {
                     </div>
                      <div className="text-right">
                         <p className="text-muted-foreground">Estado:</p>
-                        <Badge className={`gap-2 whitespace-nowrap ${statusConfig[order.status]?.color} ${statusConfig[order.status]?.textColor}`}>
-                            {React.createElement(statusConfig[order.status]?.icon, { className: 'h-3 w-3' })}
+                        <Badge className={`gap-2 whitespace-nowrap ${(statusConfig[order.status] || statusConfig['Verificar Pago']).color} ${(statusConfig[order.status] || statusConfig['Verificar Pago']).textColor}`}>
+                            {React.createElement((statusConfig[order.status] || statusConfig['Verificar Pago']).icon, { className: 'h-3 w-3' })}
                             <span>{order.status}</span>
                         </Badge>
                     </div>
@@ -205,7 +218,7 @@ function OrderDetailModal({ order, onClose }) {
     );
 }
 
-function OrdersList({ orders, userMap, onOpenDetail, onStatusChange }) {
+function OrdersList({ orders, userMap, onOpenDetail, onStatusChange, onViewReceipt }) {
      if (orders.length === 0) {
         return (
              <div className="text-center h-48 flex flex-col justify-center items-center text-muted-foreground">
@@ -227,97 +240,127 @@ function OrdersList({ orders, userMap, onOpenDetail, onStatusChange }) {
     return (
         <>
             {/* Desktop Table View */}
-            <Table className="hidden md:table">
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Factura</TableHead>
-                        <TableHead>Cliente</TableHead>
-                        <TableHead>Referencia Pago</TableHead>
-                        <TableHead>Repartidor</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead>Comprobante</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                     {orders.map((order) => (
-                        <TableRow key={order.id}>
-                            <TableCell className="font-black text-primary text-lg">#{order.invoiceNumber}</TableCell>
-                            <TableCell>
-                                <div className="flex items-start gap-2">
-                                    <div>
-                                        <p className="font-semibold">{order.userName}</p>
-                                        <p className="text-xs text-muted-foreground">{order.userEmail}</p>
-                                    </div>
-                                    {order.whatsapp && (
-                                        <Button asChild variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-                                            <a href={getWhatsAppLink(order.whatsapp)} target="_blank" rel="noopener noreferrer">
-                                                <Phone className="h-4 w-4 text-green-500" />
-                                            </a>
-                                        </Button>
-                                    )}
-                                </div>
-                            </TableCell>
-                            <TableCell>
-                                {order.paymentReference ? (
-                                    <Badge variant="outline" className="font-mono font-bold text-sm">{order.paymentReference}</Badge>
-                                ) : <span className="text-muted-foreground">-</span>}
-                            </TableCell>
-                             <TableCell>
-                                {order.repartidorAsignadoId && userMap.has(order.repartidorAsignadoId) ? (
-                                    <div className="flex items-center gap-2 text-xs">
-                                        <UserCheck className="h-4 w-4 text-blue-500" />
-                                        <span>{userMap.get(order.repartidorAsignadoId)}</span>
-                                    </div>
-                                ) : (
-                                    <span className="text-xs text-muted-foreground">-</span>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                                {order.createdAt ? (
-                                    <div className="text-xs">
-                                        <p>{format(order.createdAt.toDate(), "dd MMM yyyy, HH:mm", { locale: es })}</p>
-                                        <p className="text-muted-foreground flex items-center gap-1">
-                                            <Hourglass className="h-3 w-3" />
-                                            {formatDistanceToNow(order.createdAt.toDate(), { locale: es, addSuffix: true })}
+            <div className="hidden lg:block overflow-hidden rounded-md border border-border">
+                <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+                            <TableRow className="hover:bg-transparent">
+                                <TableHead className="w-[50px]">#</TableHead>
+                                <TableHead className="w-[180px]">Orden / Fecha</TableHead>
+                                <TableHead className="w-[220px]">Cliente</TableHead>
+                                <TableHead className="w-[150px]">Pago / Ref.</TableHead>
+                                <TableHead className="w-[180px]">Seguimiento</TableHead>
+                                <TableHead className="w-[200px]">Estado</TableHead>
+                                <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {orders.map((order, index) => (
+                            <TableRow key={order.id} className="group hover:bg-muted/30 transition-colors">
+                                <TableCell className="text-xs text-muted-foreground font-mono">
+                                    {(index + 1).toString().padStart(2, '0')}
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-black text-primary text-lg">#{order.invoiceNumber}</span>
+                                            {order.paymentReceiptUrl && (
+                                                <Link href={order.paymentReceiptUrl} target="_blank" className="text-blue-500 hover:text-blue-600 transition-colors">
+                                                    <ImageIcon className="h-4 w-4" />
+                                                </Link>
+                                            )}
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-tighter">
+                                            {order.createdAt ? format(order.createdAt.toDate(), "dd MMM, HH:mm", { locale: es }) : 'N/A'}
                                         </p>
                                     </div>
-                                ) : 'N/A'}
-                            </TableCell>
-                            <TableCell>
-                                {order.paymentReceiptUrl ? (
-                                        <Button asChild variant="ghost" size="icon">
-                                            <Link href={order.paymentReceiptUrl} target="_blank">
-                                                <ImageIcon className="h-5 w-5 text-blue-500" />
-                                            </Link>
-                                        </Button>
-                                ) : (
-                                    <span className="text-muted-foreground">-</span>
-                                )}
-                            </TableCell>
-                            <TableCell className="text-right font-bold">{formatCurrency(order.total)}</TableCell>
-                            <TableCell>
-                               <StatusSelector order={order} onStatusChange={onStatusChange} />
-                            </TableCell>
-                            <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={() => onOpenDetail(order)}>
-                                    <Eye className="mr-2 h-4 w-4" /> Ver
-                                </Button>
-                            </TableCell>
-                        </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex flex-col gap-0.5">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="font-bold text-sm truncate max-w-[140px]">{order.userName}</span>
+                                            {order.whatsapp && (
+                                                <a href={getWhatsAppLink(order.whatsapp)} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:scale-110 transition-transform">
+                                                    <WhatsAppIcon className="h-3.5 w-3.5" />
+                                                </a>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{order.userEmail}</p>
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex items-center gap-3">
+                                        {order.paymentReceiptUrl ? (
+                                            <div 
+                                                className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-2 border-primary/20 bg-muted shadow-sm hover:border-primary/50 transition-all group/receipt cursor-zoom-in"
+                                                onClick={() => onViewReceipt(order.paymentReceiptUrl)}
+                                            >
+                                                <Image 
+                                                    src={order.paymentReceiptUrl} 
+                                                    alt="Comprobante" 
+                                                    fill 
+                                                    className="object-cover hover:scale-125 transition-transform" 
+                                                    unoptimized 
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="h-12 w-12 shrink-0 rounded-md border-2 border-dashed border-muted flex items-center justify-center bg-muted/30">
+                                                <ImageIcon className="h-5 w-5 text-muted-foreground/30" />
+                                            </div>
+                                        )}
+                                        <div className="flex flex-col gap-1 min-w-[120px]">
+                                            <p className="font-black text-base text-primary leading-none">{formatCurrency(order.total)}</p>
+                                            <div className="flex flex-col gap-0.5 mt-1">
+                                                {order.paymentReference && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight">Ref:</span>
+                                                        <span className="text-[10px] font-mono font-black">{order.paymentReference}</span>
+                                                    </div>
+                                                )}
+                                                {order.whatsapp && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight">SINPE al:</span>
+                                                        <span className="text-[10px] font-black text-green-600">{order.whatsapp}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    {order.repartidorAsignadoId && userMap.has(order.repartidorAsignadoId) ? (
+                                        <div className="flex items-center gap-2 text-xs bg-blue-500/10 text-blue-600 px-2 py-1 rounded-full w-fit border border-blue-200">
+                                            <UserCheck className="h-3.5 w-3.5" />
+                                            <span className="font-medium">{userMap.get(order.repartidorAsignadoId)}</span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-xs text-muted-foreground italic">No asignado</span>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                    <StatusSelector order={order} onStatusChange={onStatusChange} />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="icon" onClick={() => onOpenDetail(order)} className="hover:text-primary hover:bg-primary/10">
+                                        <Eye className="h-4 w-4" />
+                                    </Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+                </div>
+            </div>
             
-            {/* Mobile Card View */}
-            <div className="space-y-4 md:hidden">
+            {/* Mobile/Tablet Card View */}
+            <div className="space-y-4 lg:hidden">
                 {orders.map((order) => (
                     <Card key={order.id} className="p-4 border-2">
                         <div className="flex justify-between items-start gap-4 mb-4">
-                            <div>
-                                <p className="font-black text-2xl text-primary leading-none">#{order.invoiceNumber}</p>
+                            <div className="flex-1">
+                                <div className="flex justify-between items-start">
+                                    <p className="font-black text-2xl text-primary leading-none">#{order.invoiceNumber}</p>
+                                </div>
                                 <div className="flex items-center gap-2 mt-1">
                                   <p className="text-sm font-semibold">{order.userName}</p>
                                   {order.whatsapp && (
@@ -336,21 +379,30 @@ function OrdersList({ orders, userMap, onOpenDetail, onStatusChange }) {
                         </div>
                         
                         <div className="space-y-3">
-                            <div className="flex justify-between items-center gap-2 bg-muted/50 p-2 rounded">
-                                <span className="text-xs font-bold uppercase text-muted-foreground">Ref Pago:</span>
-                                <span className="font-mono font-black">{order.paymentReference || 'N/A'}</span>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col justify-center items-center gap-2 bg-primary/5 p-3 rounded-lg border-2 border-primary/20 shadow-inner">
+                                    <span className="text-[10px] font-black uppercase text-primary/60 tracking-widest">Referencia:</span>
+                                    <span className="font-mono font-black text-lg text-primary">{order.paymentReference || 'PENDIENTE'}</span>
+                                </div>
+                                <div className="flex flex-col justify-center items-center gap-2 bg-green-500/5 p-3 rounded-lg border-2 border-green-500/20 shadow-inner">
+                                    <span className="text-[10px] font-black uppercase text-green-600/60 tracking-widest">SINPE al:</span>
+                                    <span className="font-black text-lg text-green-700">{order.whatsapp || '-'}</span>
+                                </div>
                             </div>
 
-                            <StatusSelector order={order} onStatusChange={onStatusChange} />
+                            <div className="space-y-2">
+                                <StatusSelector order={order} onStatusChange={onStatusChange} />
+                            </div>
                              
                              <div className="flex justify-between items-center pt-3 border-t">
                                 <div className="flex items-center gap-2">
                                     {order.paymentReceiptUrl ? (
-                                        <Button asChild variant="outline" size="sm">
-                                            <Link href={order.paymentReceiptUrl} target="_blank">
-                                                <ImageIcon className="mr-2 h-4 w-4" /> Comprobante
-                                            </Link>
-                                        </Button>
+                                        <div 
+                                            className="relative h-12 w-12 rounded border shadow-sm cursor-zoom-in hover:border-primary transition-colors overflow-hidden group"
+                                            onClick={() => onViewReceipt(order.paymentReceiptUrl)}
+                                        >
+                                            <Image src={order.paymentReceiptUrl} alt="Comprobante" fill className="object-cover rounded group-hover:scale-110 transition-transform" unoptimized />
+                                        </div>
                                     ) : <Badge variant="outline" className="text-xs">Sin Comprobante</Badge>}
                                 </div>
                                 <div className="text-right">
@@ -372,6 +424,7 @@ export default function AdminOrdersPage() {
     const [loading, setLoading] = useState(true);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    const [receiptModalUrl, setReceiptModalUrl] = useState(null);
     const { toast } = useToast();
     const { user } = useAuth();
     const [deliveryUsers, setDeliveryUsers] = useState([]);
@@ -380,6 +433,13 @@ export default function AdminOrdersPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedStatus, setSelectedStatus] = useState('all');
     const [dateRange, setDateRange] = useState(undefined);
+    const [siteName, setSiteName] = useState('OTRO ZARPE');
+
+    useEffect(() => {
+        getHomepageSettings().then(settings => {
+            if (settings?.siteName) setSiteName(settings.siteName);
+        });
+    }, []);
 
 
     useEffect(() => {
@@ -391,6 +451,10 @@ export default function AdminOrdersPage() {
             setOrders(fetchedOrders);
             setLoading(false);
         }, async (error) => {
+            if (error.code === 'permission-denied') {
+                setLoading(false);
+                return;
+            }
             const permissionError = new FirestorePermissionError({
                 path: ordersCol.path,
                 operation: 'list',
@@ -464,16 +528,166 @@ export default function AdminOrdersPage() {
         setDateRange(undefined);
     };
 
+    const generatePDF = (ordersToExport, title) => {
+        try {
+            const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for more columns
+            const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es });
+            const pdfFormatCurrency = (amount) => formatCurrency(amount).replace(/₡|C\./g, '').trim();
+
+            // Header
+            const parts = siteName.split(' ');
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 0, 0);
+            doc.text(parts[0], 20, 20);
+            
+            if (parts.length > 1) {
+                doc.setTextColor(220, 38, 38);
+                doc.setFont('helvetica', 'bolditalic');
+                doc.text(parts.slice(1).join(' '), 20 + doc.getTextWidth(parts[0]) + 2, 20);
+            }
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 100, 100);
+            doc.text(`REPORTE DE PEDIDOS - ${title.toUpperCase()}`, 20, 28);
+            doc.text(`Generado el: ${dateStr}`, 20, 34);
+
+            const tableData = ordersToExport.map(o => [
+                `#${o.invoiceNumber}`,
+                o.createdAt ? format(o.createdAt.toDate(), "dd/MM/yyyy HH:mm") : 'N/A',
+                o.userName,
+                o.whatsapp || '-',
+                o.paymentReference || '-',
+                o.repartidorAsignadoId ? (userMap.get(o.repartidorAsignadoId) || 'Asignado') : 'No asignado',
+                o.status,
+                pdfFormatCurrency(o.total)
+            ]);
+
+            const totalAmount = ordersToExport.reduce((acc, o) => acc + o.total, 0);
+
+            autoTable(doc, {
+                startY: 40,
+                head: [['N° Orden', 'Fecha', 'Cliente', 'WhatsApp', 'Referencia', 'Repartidor', 'Estado', 'Total']],
+                body: tableData,
+                theme: 'striped',
+                headStyles: { fillColor: [31, 41, 55] },
+                styles: { fontSize: 7 }, // Smaller font to fit more columns
+                columnStyles: {
+                    7: { halign: 'right' }
+                },
+                foot: [[
+                    'TOTAL',
+                    '',
+                    '',
+                    '',
+                    `${ordersToExport.length} pedidos`,
+                    pdfFormatCurrency(totalAmount)
+                ]],
+                footStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: 'bold' }
+            });
+
+            // Pagination
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                doc.setFontSize(10);
+                doc.setTextColor(150, 150, 150);
+                doc.line(20, pageHeight - 15, pageWidth - 20, pageHeight - 15);
+                doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+                doc.text(siteName, 20, pageHeight - 10);
+            }
+
+            doc.save(`Reporte_Pedidos_${title.replace(' ', '_')}_${format(new Date(), 'yyyyMMdd')}.pdf`);
+            toast({ title: "PDF Generado", description: "El reporte se ha descargado correctamente." });
+        } catch (error) {
+            console.error(error);
+            toast({ title: "Error", description: "No se pudo generar el reporte PDF.", variant: "destructive" });
+        }
+    };
+
     return (
         <AuthorizedOnly allowedRoles={['ADMIN']}>
             <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
                 <OrderDetailModal order={selectedOrder} onClose={() => setIsDetailModalOpen(false)} />
             </Dialog>
 
+            <Dialog open={!!receiptModalUrl} onOpenChange={(open) => !open && setReceiptModalUrl(null)}>
+                <DialogContent className="max-w-3xl p-0 overflow-hidden border-2 border-primary/10 bg-background shadow-2xl rounded-xl">
+                    <DialogHeader className="p-6 border-b bg-muted/20">
+                        <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                                <ImageIcon className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-xl font-black text-primary">Comprobante de Pago</DialogTitle>
+                                <DialogDescription className="text-xs font-bold uppercase tracking-tighter opacity-70">Revisión de verificación de SINPE / Transferencia</DialogDescription>
+                            </div>
+                        </div>
+                    </DialogHeader>
+                    
+                    <div className="relative w-full bg-slate-50 dark:bg-slate-900/50 p-4 flex items-center justify-center min-h-[50vh] max-h-[75vh]">
+                        {receiptModalUrl && (
+                            <div className="relative w-full h-full min-h-[60vh] rounded-lg overflow-hidden border-2 border-white dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-950">
+                                <Image 
+                                    src={receiptModalUrl} 
+                                    alt="Comprobante de Pago Full" 
+                                    fill 
+                                    className="object-contain" 
+                                    unoptimized 
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter className="p-4 border-t bg-muted/10 flex sm:justify-between items-center gap-3">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase hidden sm:block">
+                            Verifique el monto y la referencia antes de confirmar
+                        </p>
+                        <div className="flex gap-3 w-full sm:w-auto">
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setReceiptModalUrl(null)}
+                                className="flex-1 sm:flex-none font-bold"
+                            >
+                                CERRAR
+                            </Button>
+                            <Button 
+                                onClick={() => window.open(receiptModalUrl, '_blank')}
+                                className="flex-1 sm:flex-none font-black shadow-lg"
+                            >
+                                <Eye className="mr-2 h-4 w-4" /> VER ORIGINAL
+                            </Button>
+                        </div>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <Card>
                 <CardHeader>
-                    <CardTitle>Gestión de Pedidos</CardTitle>
-                    <CardDescription>Registro completo de ventas y estados de envío.</CardDescription>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <CardTitle>Gestión de Pedidos</CardTitle>
+                            <CardDescription>Registro completo de ventas y estados de envío.</CardDescription>
+                        </div>
+                        <div className="flex gap-2">
+                             <Button 
+                                variant="outline" 
+                                onClick={() => {
+                                    const activeTab = document.querySelector('[data-state="active"][role="tab"]')?.getAttribute('value');
+                                    const ordersToExport = activeTab === 'active' ? filteredActiveOrders : filteredHistoricalOrders;
+                                    const title = activeTab === 'active' ? 'Órdenes Activas' : 'Historial de Órdenes';
+                                    generatePDF(ordersToExport, title);
+                                }}
+                                disabled={loading}
+                             >
+                                <FileText className="mr-2 h-4 w-4" />
+                                Exportar PDF
+                            </Button>
+                        </div>
+                    </div>
                      <div className="mt-6 border-t pt-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
                             <div className="relative lg:col-span-2">
@@ -489,7 +703,7 @@ export default function AdminOrdersPage() {
                                 <SelectTrigger><SelectValue placeholder="Filtrar por estado" /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Todos los estados</SelectItem>
-                                    {Object.keys(statusConfig).map(status => (
+                                    {ALLOWED_MANUAL_STATUSES.map(status => (
                                         <SelectItem key={status} value={status}>{status}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -553,6 +767,7 @@ export default function AdminOrdersPage() {
                                     userMap={userMap}
                                     onOpenDetail={openDetailModal}
                                     onStatusChange={handleStatusChange}
+                                    onViewReceipt={setReceiptModalUrl}
                                 />
                             </TabsContent>
                              <TabsContent value="history" className="mt-4">
@@ -561,6 +776,7 @@ export default function AdminOrdersPage() {
                                     userMap={userMap}
                                     onOpenDetail={openDetailModal}
                                     onStatusChange={handleStatusChange}
+                                    onViewReceipt={setReceiptModalUrl}
                                 />
                             </TabsContent>
                         </Tabs>

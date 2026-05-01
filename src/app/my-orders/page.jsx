@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getUsers } from '@/lib/users-service';
 
 const statusConfig = {
-    'Pendiente de Confirmacion de Pago': { icon: Clock, color: 'bg-yellow-400 text-black dark:bg-yellow-400 dark:text-black' },
+    'Verificar Pago': { icon: Clock, color: 'bg-orange-500 text-white dark:bg-orange-600 dark:text-white' },
     'Pagado': { icon: CheckCircle, color: 'bg-green-500/20 text-green-700 dark:text-green-400' },
     'En Preparación': { icon: PackageCheck, color: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-400' },
     'Enviado': { icon: Truck, color: 'bg-blue-500/20 text-blue-700 dark:text-blue-400' },
@@ -32,7 +32,7 @@ const statusConfig = {
 
 
 function StatusBadge({ status }) {
-    const currentStatus = status === 'Pendiente de Pago' ? 'Pendiente de Confirmacion de Pago' : status;
+    const currentStatus = (status === 'Pendiente de Pago' || status === 'Pendiente de Confirmacion de Pago' || status === 'En verificación') ? 'Verificar Pago' : status;
     const config = statusConfig[currentStatus] || { icon: Clock, color: 'bg-gray-500/20 text-gray-700' };
     const Icon = config.icon;
     return (
@@ -256,14 +256,21 @@ export default function MyOrdersPage() {
             setOrders(fetchedOrders);
             setLoading(false);
         }, (error) => {
-            console.error(error);
+            // Silently ignore permission errors during logout
+            if (error.code === 'permission-denied') {
+                setLoading(false);
+                return;
+            }
+            console.error("Orders listener error:", error);
             toast({ title: 'Error', description: 'No se pudieron cargar tus órdenes.', variant: 'destructive' });
             setLoading(false);
         });
 
-        getUsers({ roles: ['DELIVERY', 'ADMIN'] })
-            .then(setDeliveryUsers)
-            .catch(err => console.error("Could not fetch delivery users", err));
+        if (user.role !== 'CLIENT') {
+            getUsers({ roles: ['REPARTIDOR', 'ADMIN'] })
+                .then(setDeliveryUsers)
+                .catch(err => console.error("Could not fetch delivery users", err));
+        }
 
         return () => unsubscribe();
     }, [user, authLoading, router, toast]);

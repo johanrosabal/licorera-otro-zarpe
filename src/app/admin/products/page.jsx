@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency } from '@/lib/utils';
-import { PlusCircle, MoreHorizontal, Loader2, Edit, Trash2, Search, FilterX, Eye, Package, DollarSign, Star, Calendar, Box, CheckCircle, XCircle } from 'lucide-react';
+import { formatCurrency, cn } from '@/lib/utils';
+import { PlusCircle, MoreHorizontal, Loader2, Edit, Trash2, Search, FilterX, Eye, Package, DollarSign, Star, Calendar, Box, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import {
   DropdownMenu,
@@ -41,6 +41,7 @@ import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { Badge } from '@/components/ui/badge';
 import { updateProduct, deleteProduct } from '@/lib/products-service';
+import { getProductCostHistory } from '@/lib/purchases-service';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { ProductForm } from '@/components/admin/product-form';
@@ -53,14 +54,14 @@ import { Separator } from '@/components/ui/separator';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
-function DetailItem({ icon: Icon, label, value }) {
+function DetailItem({ icon: Icon, label, value, valueClassName }) {
     if (value === null || value === undefined) return null;
     return (
         <div className="flex items-start gap-2">
             <Icon className="h-4 w-4 mt-1 text-muted-foreground" />
             <div>
                 <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="font-medium">{value}</p>
+                <p className={cn("font-medium", valueClassName)}>{value}</p>
             </div>
         </div>
     );
@@ -75,6 +76,98 @@ function DetailBoolean({ icon: Icon, label, value }) {
     );
 }
 
+
+function ProductCostHistoryModal({ product, onClose }) {
+    const [history, setHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!product) return;
+        async function fetchHistory() {
+            try {
+                const data = await getProductCostHistory(product.id);
+                setHistory(data);
+            } catch (error) {
+                console.error("Error fetching cost history:", error);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchHistory();
+    }, [product]);
+
+    if (!product) return null;
+
+    return (
+        <DialogContent className="sm:max-w-4xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+                <DialogTitle>Historial de Costos: {product.name}</DialogTitle>
+                <DialogDescription>
+                    Registro de variaciones en el costo unitario detectadas durante las compras.
+                </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex-1 overflow-y-auto py-4">
+                {loading ? (
+                    <div className="flex justify-center py-8"><Loader2 className="animate-spin h-8 w-8" /></div>
+                ) : history.length > 0 ? (
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Fecha</TableHead>
+                                <TableHead>Factura</TableHead>
+                                <TableHead className="text-right">Costo Anterior</TableHead>
+                                <TableHead className="text-right">Costo Nuevo</TableHead>
+                                <TableHead className="text-right">Variación</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {history.map((entry) => {
+                                const isIncrease = entry.difference > 0;
+                                return (
+                                    <TableRow key={entry.id}>
+                                        <TableCell className="text-sm">
+                                            {entry.createdAt ? format(entry.createdAt.toDate(), "dd/MM/yy HH:mm", { locale: es }) : 'N/A'}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="text-sm">
+                                                <p className="font-medium">#{entry.invoiceNumber}</p>
+                                                <p className="text-xs text-muted-foreground">ID Prov: {entry.supplierId}</p>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right text-muted-foreground">
+                                            {formatCurrency(entry.previousCostPrice)}
+                                        </TableCell>
+                                        <TableCell className="text-right font-semibold">
+                                            {formatCurrency(entry.newCostPrice)}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className={cn(
+                                                "flex flex-col items-end text-xs font-bold",
+                                                isIncrease ? "text-destructive" : entry.difference < 0 ? "text-green-600" : "text-muted-foreground"
+                                            )}>
+                                                <span>{isIncrease ? '▲' : '▼'} {formatCurrency(Math.abs(entry.difference))}</span>
+                                                <span>({entry.differencePercentage.toFixed(1)}%)</span>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                        <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-2 opacity-20" />
+                        <p className="text-muted-foreground">No se han registrado variaciones de costo para este producto.</p>
+                    </div>
+                )}
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={onClose}>Cerrar</Button>
+            </DialogFooter>
+        </DialogContent>
+    );
+}
 
 function ProductDetailModal({ product, onClose }) {
     if (!product) return null;
@@ -146,6 +239,7 @@ export default function AdminProductsPage() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [deletingProduct, setDeletingProduct] = useState(null);
   const [detailProduct, setDetailProduct] = useState(null);
+  const [historyProduct, setHistoryProduct] = useState(null);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const { toast } = useToast();
@@ -156,6 +250,10 @@ export default function AdminProductsPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
+
+  // Pagination
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
 
 
   useEffect(() => {
@@ -209,6 +307,12 @@ export default function AdminProductsPage() {
       return searchMatch && categoryMatch && brandMatch && statusMatch;
     });
   }, [products, searchTerm, selectedCategory, selectedBrand, selectedStatus]);
+
+  // Reset to page 1 whenever filters or page size change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedCategory, selectedBrand, selectedStatus, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const resetFilters = () => {
     setSearchTerm('');
@@ -291,6 +395,10 @@ export default function AdminProductsPage() {
             <ProductDetailModal product={detailProduct} onClose={() => setDetailProduct(null)} />
         </Dialog>
 
+        <Dialog open={!!historyProduct} onOpenChange={(isOpen) => !isOpen && setHistoryProduct(null)}>
+            <ProductCostHistoryModal product={historyProduct} onClose={() => setHistoryProduct(null)} />
+        </Dialog>
+
         <AlertDialog open={!!deletingProduct} onOpenChange={(isOpen) => !isOpen && setDeletingProduct(null)}>
              <AlertDialogContent>
               <AlertDialogHeader>
@@ -365,16 +473,18 @@ export default function AdminProductsPage() {
             <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="hidden w-[100px] sm:table-cell">
+                  <TableHead className="w-[50px] sticky top-0 z-10 bg-background border-b shadow-sm">#</TableHead>
+                  <TableHead className="hidden w-[100px] sm:table-cell sticky top-0 z-10 bg-background border-b shadow-sm">
                     Imagen
                   </TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Destacado</TableHead>
-                  <TableHead>Categoría/Marca</TableHead>
-                  <TableHead className="text-right">Precio</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Nombre</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Estado</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Destacado</TableHead>
+                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Categoría/Marca</TableHead>
+                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">P. Costo</TableHead>
+                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">P. Venta</TableHead>
+                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">Stock</TableHead>
+                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">
                     <span className="sr-only">Acciones</span>
                   </TableHead>
                 </TableRow>
@@ -382,13 +492,16 @@ export default function AdminProductsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center h-64">
+                    <TableCell colSpan={10} className="text-center h-64">
                       <Loader2 className="mx-auto animate-spin h-10 w-10" />
                     </TableCell>
                   </TableRow>
-                ) : filteredProducts.length > 0 ? (
-                  filteredProducts.map((product) => (
+                ) : paginatedProducts.length > 0 ? (
+                  paginatedProducts.map((product, index) => (
                     <TableRow key={product.id}>
+                      <TableCell className="text-muted-foreground font-medium">
+                        {(currentPage - 1) * pageSize + index + 1}
+                      </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {product.image ? (
                           <Image
@@ -427,7 +540,8 @@ export default function AdminProductsPage() {
                             <p className="font-semibold">{product.brand || '-'}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(product.sellingPrice)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatCurrency(product.costPrice)}</TableCell>
+                      <TableCell className="text-right font-semibold">{formatCurrency(product.sellingPrice)}</TableCell>
                       <TableCell className="text-right font-bold">{product.stock}</TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -446,6 +560,10 @@ export default function AdminProductsPage() {
                                 <Edit className="mr-2 h-4 w-4" />
                                 <span>Editar</span>
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setHistoryProduct(product)}>
+                                <DollarSign className="mr-2 h-4 w-4" />
+                                <span>Historial de Costos</span>
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onSelect={(e) => {e.preventDefault(); setDeletingProduct(product);}} className="text-destructive">
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -458,7 +576,7 @@ export default function AdminProductsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground h-48">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground h-48">
                       {searchTerm ? `No se encontraron productos para "${searchTerm}".` : 'No hay productos que coincidan con los filtros.'}
                     </TableCell>
                   </TableRow>
@@ -472,8 +590,8 @@ export default function AdminProductsPage() {
                 <div className="flex justify-center items-center py-16">
                   <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                 </div>
-              ) : filteredProducts.length > 0 ? (
-                filteredProducts.map(product => (
+              ) : paginatedProducts.length > 0 ? (
+                paginatedProducts.map(product => (
                   <Card key={product.id}>
                     <CardHeader className="flex flex-row items-start gap-4 p-4">
                       <Image
@@ -503,6 +621,10 @@ export default function AdminProductsPage() {
                                 <Edit className="mr-2 h-4 w-4" />
                                 Editar
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setHistoryProduct(product)}>
+                                <DollarSign className="mr-2 h-4 w-4" />
+                                Historial de Costos
+                            </DropdownMenuItem>
                             <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDeletingProduct(product);}} className="text-destructive">
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Eliminar
@@ -512,8 +634,12 @@ export default function AdminProductsPage() {
                     </CardHeader>
                     <CardContent className="p-4 pt-0 grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <p className="text-sm text-muted-foreground">Precio</p>
-                            <p className="font-semibold">{formatCurrency(product.sellingPrice)}</p>
+                            <p className="text-sm text-muted-foreground">Precio Costo</p>
+                            <p className="font-medium text-muted-foreground">{formatCurrency(product.costPrice)}</p>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-sm text-muted-foreground">Precio Venta</p>
+                            <p className="font-bold">{formatCurrency(product.sellingPrice)}</p>
                         </div>
                         <div className="space-y-1">
                             <p className="text-sm text-muted-foreground">Stock</p>
@@ -537,6 +663,52 @@ export default function AdminProductsPage() {
               )}
             </div>
           </CardContent>
+          {/* Pagination controls */}
+          {!loading && (filteredProducts.length > pageSize || pageSize !== 20) && (
+            <CardFooter className="flex flex-col md:flex-row items-center justify-between gap-4 border-t px-6 py-4">
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-muted-foreground whitespace-nowrap">
+                  Mostrando <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span>–<span className="font-medium">{Math.min(currentPage * pageSize, filteredProducts.length)}</span> de <span className="font-medium">{filteredProducts.length}</span>
+                </p>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">Filas:</span>
+                    <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(parseInt(v))}>
+                        <SelectTrigger className="h-8 w-[70px]">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+                <span className="text-sm font-medium px-2">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Siguiente
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardFooter>
+          )}
         </Card>
       </div>
     </AuthorizedOnly>

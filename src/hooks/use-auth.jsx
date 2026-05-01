@@ -11,6 +11,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import Image from 'next/image';
+import { BrandLogo } from '@/components/brand-logo';
 
 const AuthContext = createContext({
   user: null,
@@ -22,14 +23,23 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [siteName, setSiteName] = useState('OTRO ZARPE');
+  const [siteSlogan, setSiteSlogan] = useState('PREMIUM SELECTION');
 
   useEffect(() => {
+    let unsubSnapshot = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Clean up previous snapshot listener if any
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
+
       if (firebaseUser) {
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         
-        // Use onSnapshot for real-time role updates
-        const unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+        unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const userData = docSnap.data();
             setUser({
@@ -38,11 +48,10 @@ export const AuthProvider = ({ children }) => {
               name: userData.name || firebaseUser.displayName,
               whatsapp: userData.whatsapp,
               photoURL: firebaseUser.photoURL,
-              role: userData.role || 'CLIENT', // Default to CLIENT if role is not set
+              role: userData.role || 'CLIENT',
               locationUrl: userData.locationUrl,
             });
           } else {
-            // If user doc doesn't exist, they are a regular client.
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -55,20 +64,25 @@ export const AuthProvider = ({ children }) => {
           }
           setLoading(false);
         }, (error) => {
-            console.error("Error fetching user role:", error);
-            setUser({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                name: firebaseUser.displayName,
-                photoURL: firebaseUser.photoURL,
-                whatsapp: null,
-                role: 'CLIENT',
-                locationUrl: null,
-            });
+            // If we get a permission error, it might be because we just logged out.
+            // Only set user if we still have a firebaseUser from the current scope.
+            // But actually, if there's an error, we should probably not set a "fake" user if the auth state is changing.
+            console.error("AuthProvider snapshot error:", error);
+            
+            // Only fall back to CLIENT if this is a genuine fetch error for a logged-in user
+            if (auth.currentUser) {
+                setUser({
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    name: firebaseUser.displayName,
+                    photoURL: firebaseUser.photoURL,
+                    whatsapp: null,
+                    role: 'CLIENT',
+                    locationUrl: null,
+                });
+            }
             setLoading(false);
         });
-
-        return () => unsubSnapshot();
 
       } else {
         setUser(null);
@@ -76,7 +90,19 @@ export const AuthProvider = ({ children }) => {
       }
     });
 
-    return () => unsubscribe();
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'homepage'), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setSiteName(data.siteName ?? 'OTRO ZARPE');
+        setSiteSlogan(data.siteSlogan ?? 'PREMIUM SELECTION');
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubSettings();
+      if (unsubSnapshot) unsubSnapshot();
+    };
   }, []);
 
   const value = { user, loading };
@@ -86,25 +112,8 @@ export const AuthProvider = ({ children }) => {
       {loading ? (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background">
             <div className="animate-blur-in flex flex-col items-center w-full max-w-md px-8">
-                <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/licorera-otro-zarpe.firebasestorage.app/o/settings%2FOtro_Zarpe_Logo.png?alt=media&token=7d496c2b-533a-4651-8ffa-3e4ce3ca598e"
-                    alt="Otro Zarpe Logo"
-                    width={400}
-                    height={67}
-                    unoptimized
-                    priority
-                    className="hidden dark:block"
-                />
-                <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/licorera-otro-zarpe.firebasestorage.app/o/settings%2FLogoTemaClaro.png?alt=media&token=df823679-246c-43b3-890c-68b9a612e2d1"
-                    alt="Otro Zarpe Logo"
-                    width={400}
-                    height={67}
-                    unoptimized
-                    priority
-                    className="block dark:hidden"
-                />
-                <p className="mt-8 text-lg text-muted-foreground">Bienvenidos a la experiencia en Línea</p>
+                <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isSplash />
+                <p className="mt-8 text-lg text-muted-foreground animate-pulse">Bienvenidos a la experiencia en Línea</p>
             </div>
         </div>
       ) : (

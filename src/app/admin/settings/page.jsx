@@ -20,30 +20,32 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
 const settingsSchema = z.object({
-  heroImage: z.any().optional(),
   facebookUrl: z.string().url({ message: 'Por favor, introduce una URL válida.' }).optional().or(z.literal('')),
   instagramUrl: z.string().url({ message: 'Por favor, introduce una URL válida.' }).optional().or(z.literal('')),
   twitterUrl: z.string().url({ message: 'Por favor, introduce una URL válida.' }).optional().or(z.literal('')),
   whatsappNumber: z.string().optional(),
   deliveriesEnabled: z.boolean().default(true),
+  storeLocationUrl: z.string().url({ message: 'Por favor, introduce una URL de Google Maps válida.' }).optional().or(z.literal('')),
+  siteName: z.string().min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }).max(30),
+  siteSlogan: z.string().max(50).optional().or(z.literal('')),
 });
 
 export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [existingImageUrl, setExistingImageUrl] = useState(null);
   const { toast } = useToast();
 
   const form = useForm({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
-      heroImage: undefined,
       facebookUrl: '',
       instagramUrl: '',
       twitterUrl: '',
       whatsappNumber: '',
       deliveriesEnabled: true,
+      storeLocationUrl: '',
+      siteName: 'OTRO ZARPE',
+      siteSlogan: 'PREMIUM SELECTION',
     },
   });
 
@@ -60,18 +62,15 @@ export default function AdminSettingsPage() {
             }
 
             form.reset({
-                heroImage: undefined,
                 facebookUrl: settings.facebookUrl || '',
                 instagramUrl: settings.instagramUrl || '',
                 twitterUrl: settings.twitterUrl || '',
                 whatsappNumber: whatsappNumber || '',
                 deliveriesEnabled: settings.deliveriesEnabled !== undefined ? settings.deliveriesEnabled : true,
+                storeLocationUrl: settings.storeLocationUrl || '',
+                siteName: settings.siteName || 'OTRO ZARPE',
+                siteSlogan: settings.siteSlogan || 'PREMIUM SELECTION',
             });
-
-            if (settings.heroImageUrl) {
-                setExistingImageUrl(settings.heroImageUrl);
-                setImagePreview(settings.heroImageUrl);
-            }
         }
         setLoading(false);
     }, (error) => {
@@ -105,13 +104,14 @@ export default function AdminSettingsPage() {
       const whatsappUrl = whatsappNumber ? `https://wa.me/506${whatsappNumber}` : '';
 
       const settingsToUpdate = {
-        ...(data.heroImage instanceof File && { newHeroImage: data.heroImage }),
-        existingHeroImageUrl: existingImageUrl,
         facebookUrl: data.facebookUrl,
         instagramUrl: data.instagramUrl,
         twitterUrl: data.twitterUrl,
         whatsappUrl: whatsappUrl,
         deliveriesEnabled: data.deliveriesEnabled,
+        storeLocationUrl: data.storeLocationUrl,
+        siteName: data.siteName,
+        siteSlogan: data.siteSlogan,
       };
 
       await updateHomepageSettings(settingsToUpdate);
@@ -140,52 +140,48 @@ export default function AdminSettingsPage() {
       <div className="w-full">
         <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                <Card>
+                <Card className="border-2 border-primary/20 shadow-lg bg-primary/5">
                     <CardHeader>
-                        <CardTitle>Configuración de la Página Principal</CardTitle>
-                        <CardDescription>Personaliza la apariencia y otros aspectos de tu tienda virtual.</CardDescription>
+                        <CardTitle className="text-xl font-black text-primary">Identidad de la Marca</CardTitle>
+                        <CardDescription>Personaliza el nombre y eslogan de tu tienda.</CardDescription>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-4">
                         <FormField
-                        control={form.control}
-                        name="heroImage"
-                        render={({ field }) => (
-                            <FormItem>
-                            <FormLabel>Imagen del Banner Principal</FormLabel>
-                            <FormControl>
-                                <div className="w-full">
-                                <Input
-                                    type="file"
-                                    className="hidden"
-                                    id="image-upload"
-                                    accept="image/*"
-                                    onChange={(e) => field.onChange(e.target.files ? e.target.files[0] : null)}
-                                    disabled={submitting}
-                                />
-                                <label
-                                    htmlFor="image-upload"
-                                    className="group w-full h-[70vh] border-2 border-dashed border-muted-foreground/50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors relative overflow-hidden bg-muted/20"
-                                >
-                                    {imagePreview ? (
-                                    <>
-                                        <Image src={imagePreview} alt="Vista previa del banner" fill className="object-contain" unoptimized />
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <p className="text-white text-center">Cambiar imagen</p>
-                                        </div>
-                                    </>
-                                    ) : (
-                                    <div className="text-center text-muted-foreground">
-                                        <Upload className="mx-auto h-12 w-12 mb-2" />
-                                        <p>Haz clic para subir una imagen</p>
-                                        <p className="text-xs">Recomendado: 1200x800px o similar</p>
-                                    </div>
-                                    )}
-                                </label>
-                                </div>
-                            </FormControl>
-                            <FormMessage />
-                            </FormItem>
-                        )}
+                            control={form.control}
+                            name="siteName"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel className="font-bold">Nombre del Sitio (Logo)</FormLabel>
+                                    <FormControl>
+                                        <Input 
+                                            placeholder="Ej: OTRO ZARPE" 
+                                            {...field} 
+                                            className="text-2xl font-black h-14 border-2 focus-visible:ring-primary bg-background"
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                         <FormField
+                            control={form.control}
+                            name="siteSlogan"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel className="font-bold">Eslogan (Texto de abajo)</FormLabel>
+                                    <FormControl>
+                                        <Input 
+                                            placeholder="Ej: PREMIUM SELECTION" 
+                                            {...field} 
+                                            className="font-bold tracking-widest uppercase border-2 focus-visible:ring-primary bg-background"
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Texto pequeño que aparece debajo del nombre.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
                         />
                     </CardContent>
                 </Card>
@@ -287,6 +283,25 @@ export default function AdminSettingsPage() {
                                     </FormControl>
                                     <FormDescription>
                                         Ingresa solo el número de 8 dígitos. El sistema agregará el prefijo de país (+506) automáticamente.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                         <FormField
+                            control={form.control}
+                            name="storeLocationUrl"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>URL de Localización de la Tienda (Google Maps)</FormLabel>
+                                    <FormControl>
+                                        <div className="relative">
+                                            <Save className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                            <Input placeholder="https://goo.gl/maps/..." {...field} className="pl-10" />
+                                        </div>
+                                    </FormControl>
+                                    <FormDescription>
+                                        Pega el enlace de Google Maps para que los clientes puedan llegar a la tienda física.
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

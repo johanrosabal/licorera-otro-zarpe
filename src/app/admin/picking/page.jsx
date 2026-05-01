@@ -18,8 +18,15 @@ import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import Image from 'next/image';
 import { Input } from '@/components/ui/input';
-import { extractCoordsFromUrl } from '@/lib/utils';
+import { extractCoordsFromUrl, cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getHomepageSettings } from '@/lib/settings';
+import dynamic from 'next/dynamic';
+
+const CustomerLocationMap = dynamic(() => import('./customer-location-map'), {
+  ssr: false,
+  loading: () => <div className="h-[200px] w-full bg-muted animate-pulse rounded-lg border-2 border-primary/5" />
+});
 
 
 function WhatsAppIcon(props) {
@@ -125,6 +132,7 @@ export default function PickingPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const { toast } = useToast();
     const [deliveryUsers, setDeliveryUsers] = useState([]);
+    const [deliveriesEnabled, setDeliveriesEnabled] = useState(true);
     
     useEffect(() => {
         const q = query(
@@ -148,6 +156,10 @@ export default function PickingPage() {
             console.error('Error fetching users:', err);
             toast({ title: 'Error', description: 'No se pudieron cargar los repartidores.', variant: 'destructive' });
         });
+
+        getHomepageSettings().then(settings => {
+            setDeliveriesEnabled(settings?.deliveriesEnabled !== false);
+        }).catch(err => console.error("Error fetching settings:", err));
 
         return () => unsubscribe();
     }, [toast]);
@@ -290,20 +302,42 @@ export default function PickingPage() {
 
                                             <div className="space-y-2">
                                                 <p className="text-sm font-semibold">Ubicación:</p>
-                                                <NavigationButtons locationUrl={order.locationUrl} />
+                                                {order.locationUrl ? (
+                                                    <div className="space-y-3">
+                                                        <CustomerLocationMap 
+                                                            lat={extractCoordsFromUrl(order.locationUrl)?.lat} 
+                                                            lng={extractCoordsFromUrl(order.locationUrl)?.lng} 
+                                                        />
+                                                        <NavigationButtons locationUrl={order.locationUrl} />
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground italic">Sin ubicación configurada</p>
+                                                )}
                                             </div>
 
-                                            <div className="space-y-2">
-                                                <p className="text-sm font-semibold">Asignar Repartidor:</p>
-                                                <OrderAssignment order={order} deliveryUsers={deliveryUsers} onAssign={handleAssignRepartidor} />
-                                            </div>
+                                            {deliveriesEnabled && (
+                                                <div className="space-y-2 border-t pt-4">
+                                                    <p className="text-sm font-semibold">Asignar Repartidor:</p>
+                                                    <OrderAssignment order={order} deliveryUsers={deliveryUsers} onAssign={handleAssignRepartidor} />
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </CardContent>
-                                <CardFooter className="bg-muted/30 p-4 flex justify-end">
-                                    <Button onClick={() => handleStatusChange(order.id, 'Enviado')} disabled={!order.repartidorAsignadoId}>
-                                        <Truck className="mr-2 h-4 w-4"/>
-                                        Marcar como Enviado
+                                <CardFooter className={cn("bg-muted/30 p-4 flex justify-end", !deliveriesEnabled && "bg-green-500/5")}>
+                                    <Button 
+                                        onClick={() => handleStatusChange(order.id, deliveriesEnabled ? 'Enviado' : 'Completado')} 
+                                        disabled={deliveriesEnabled && !order.repartidorAsignadoId}
+                                        className={cn(
+                                            "font-black uppercase tracking-wider shadow-lg transition-all",
+                                            !deliveriesEnabled && "bg-green-600 hover:bg-green-700 text-white"
+                                        )}
+                                    >
+                                        {deliveriesEnabled ? (
+                                            <><Truck className="mr-2 h-4 w-4"/> Marcar como Enviado</>
+                                        ) : (
+                                            <><CheckCircle className="mr-2 h-4 w-4"/> Marcar como Completado</>
+                                        )}
                                     </Button>
                                 </CardFooter>
                             </Card>

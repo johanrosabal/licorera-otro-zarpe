@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import Image from 'next/image'
+import { BrandLogo } from '../brand-logo'
 
 function WhatsAppIcon(props) {
     return (
@@ -31,6 +32,8 @@ function WhatsAppIcon(props) {
 export function Footer() {
   const currentYear = new Date().getFullYear()
   const [socials, setSocials] = useState({ facebookUrl: '', instagramUrl: '', twitterUrl: '', whatsappUrl: '' });
+  const [siteName, setSiteName] = useState('OTRO ZARPE');
+  const [siteSlogan, setSiteSlogan] = useState('PREMIUM SELECTION');
 
   useEffect(() => {
     const settingsRef = doc(db, 'settings', 'homepage');
@@ -43,6 +46,8 @@ export function Footer() {
                 twitterUrl: data.twitterUrl || '',
                 whatsappUrl: data.whatsappUrl || '',
             });
+            setSiteName(data.siteName ?? 'OTRO ZARPE');
+            setSiteSlogan(data.siteSlogan ?? 'PREMIUM SELECTION');
         }
     });
 
@@ -55,22 +60,7 @@ export function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-2">
             <Link href="/">
-                <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/licorera-otro-zarpe.firebasestorage.app/o/settings%2FOtro_Zarpe_Logo.png?alt=media&token=7d496c2b-533a-4651-8ffa-3e4ce3ca598e"
-                    alt="Otro Zarpe Logo"
-                    width={180}
-                    height={30}
-                    unoptimized
-                    className="hidden dark:block"
-                />
-                 <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/licorera-otro-zarpe.firebasestorage.app/o/settings%2FLogoTemaClaro.png?alt=media&token=df823679-246c-43b3-890c-68b9a612e2d1"
-                    alt="Otro Zarpe Logo"
-                    width={180}
-                    height={30}
-                    unoptimized
-                    className="block dark:hidden"
-                />
+                <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isMobile />
             </Link>
           </div>
           <nav className="flex gap-6 font-medium">

@@ -22,7 +22,7 @@ export const getHomepageSettings = async () => {
         if (docSnap.exists()) {
             return docSnap.data();
         }
-        return { deliveriesEnabled: true }; // Default values
+        return { deliveriesEnabled: true, siteName: 'OTRO ZARPE' }; // Default values
     } catch (error) {
         logError(error, 'getHomepageSettings');
         throw error;
@@ -43,22 +43,9 @@ export const updateHomepageSettings = async (data) => {
         if (data.deliveryOriginLat !== undefined) settingsToUpdate.deliveryOriginLat = data.deliveryOriginLat;
         if (data.deliveryOriginLng !== undefined) settingsToUpdate.deliveryOriginLng = data.deliveryOriginLng;
         if (data.deliveriesEnabled !== undefined) settingsToUpdate.deliveriesEnabled = data.deliveriesEnabled;
-
-        if (data.newHeroImage instanceof File) {
-            const newImageUrl = await uploadImage(data.newHeroImage, 'settings/homepage');
-            settingsToUpdate.heroImageUrl = newImageUrl;
-
-            if (data.existingHeroImageUrl) {
-                try {
-                    const oldImageRef = ref(storage, data.existingHeroImageUrl);
-                    await deleteObject(oldImageRef);
-                } catch (error) {
-                    if (error.code !== 'storage/object-not-found') {
-                        console.error("Failed to delete old hero image:", error);
-                    }
-                }
-            }
-        }
+        if (data.storeLocationUrl !== undefined) settingsToUpdate.storeLocationUrl = data.storeLocationUrl;
+        if (data.siteName !== undefined) settingsToUpdate.siteName = data.siteName;
+        if (data.siteSlogan !== undefined) settingsToUpdate.siteSlogan = data.siteSlogan;
 
         await setDoc(homepageDocRef, settingsToUpdate, { merge: true });
     } catch (error) {

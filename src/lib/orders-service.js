@@ -200,6 +200,7 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
             const paymentMethodToStore = {
                 id: paymentMethod.id,
                 name: paymentMethod.name,
+                bankAccountId: paymentMethod.bankAccountId || null,
             };
 
             const orderData = {
@@ -216,7 +217,7 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
                 paymentMethod: paymentMethodToStore,
                 paymentReceiptUrl,
                 paymentReference: paymentReference || null, // Store the payment reference
-                status: paymentReceiptUrl ? 'Pagado' : 'Pendiente de Confirmacion de Pago',
+                status: paymentReceiptUrl ? 'Verificar Pago' : 'Pendiente de Pago',
                 createdAt: serverTimestamp(),
                 repartidorAsignadoId: null,
             };
@@ -233,27 +234,28 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
 
 export const updateOrderStatus = async (orderId, newStatus) => {
     const orderRef = doc(db, 'orders', orderId);
+    const VERIFIED_STATUSES = ['Pagado', 'En Preparación', 'Enviado', 'Completado'];
     
-    if (newStatus === 'Cancelado') {
-        try {
-            await runTransaction(db, async (transaction) => {
-                const orderDoc = await transaction.get(orderRef);
-                if (!orderDoc.exists() || orderDoc.data().status === 'Cancelado') {
-                    return; 
-                }
-                const orderData = orderDoc.data();
-                
-                const stockToRevert = new Map();
+    try {
+        await runTransaction(db, async (transaction) => {
+            const orderDoc = await transaction.get(orderRef);
+            if (!orderDoc.exists()) throw new Error("La orden no existe.");
+            
+            const orderData = orderDoc.data();
+            const oldStatus = orderData.status;
+            
+            if (oldStatus === newStatus) return;
 
+            // 1. Handle Inventory Reversion if Cancelling
+            if (newStatus === 'Cancelado' && oldStatus !== 'Cancelado') {
+                const stockToRevert = new Map();
                 const allProductIdsToFetch = new Set();
                 orderData.items.forEach(item => allProductIdsToFetch.add(item.id));
+                
                 const productDocs = await Promise.all(Array.from(allProductIdsToFetch).map(id => transaction.get(doc(db, 'products', id))));
-
                 const productDataMap = new Map();
                 for (const docSnap of productDocs) {
-                    if (docSnap.exists()) {
-                        productDataMap.set(docSnap.id, docSnap.data());
-                    }
+                    if (docSnap.exists()) productDataMap.set(docSnap.id, docSnap.data());
                 }
                 
                 for (const item of orderData.items) {
@@ -271,7 +273,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
                 for (const item of orderData.items) {
                     const productData = productDataMap.get(item.id);
                     if (!productData) continue;
-
                     if (productData.isBundle) {
                         productData.bundleItems.forEach(bundleItem => {
                             const quantityToRevert = bundleItem.quantity * item.quantity;
@@ -283,44 +284,86 @@ export const updateOrderStatus = async (orderId, newStatus) => {
                 }
                 
                 for (const [productId, quantity] of stockToRevert.entries()) {
-                    const productRef = doc(productsCollectionRef, productId);
+                    const productRef = doc(db, 'products', productId);
                     const productData = productDataMap.get(productId);
                     if (!productData) continue;
-
                     const currentStock = productData.stock || 0;
                     const newStock = currentStock + quantity;
-                    
                     transaction.update(productRef, { stock: newStock });
-
-                    const movementDocRef = doc(inventoryMovementsCollection);
-                    transaction.set(movementDocRef, {
-                        orderId: orderId,
+                    
+                    transaction.set(doc(collection(db, 'inventoryMovements')), {
+                        orderId,
                         invoiceNumber: orderData.invoiceNumber,
-                        productId: productId,
+                        productId,
                         type: 'ENTRADA',
-                        quantity: quantity,
+                        quantity,
                         reason: `Cancelación - Orden #${orderData.invoiceNumber}`,
                         previousStock: currentStock,
-                        newStock: newStock,
+                        newStock,
                         createdAt: serverTimestamp(),
                         userId: orderData.userId,
                         userEmail: orderData.userEmail,
                     });
                 }
+            }
+
+            // 2. Handle Bank Balance Update
+            const bankAccountId = orderData.paymentMethod?.bankAccountId;
+            if (bankAccountId) {
+                const isOldVerified = VERIFIED_STATUSES.includes(oldStatus);
+                const isNewVerified = VERIFIED_STATUSES.includes(newStatus);
                 
-                transaction.update(orderRef, { status: newStatus });
-            });
-        } catch (error) {
-            logError(error, 'updateOrderStatus-cancel', { orderId });
-            throw new Error("No se pudo cancelar la orden y revertir el inventario.");
-        }
-    } else {
-        try {
-            await updateDoc(orderRef, { status: newStatus });
-        } catch (error) {
-            logError(error, 'updateOrderStatus', { orderId, newStatus });
-            throw error;
-        }
+                if (!isOldVerified && isNewVerified) {
+                    // Payment confirmed -> Increase balance
+                    const bankAccountRef = doc(db, 'bankAccounts', bankAccountId);
+                    const bankAccountSnap = await transaction.get(bankAccountRef);
+                    if (bankAccountSnap.exists()) {
+                        const accountData = bankAccountSnap.data();
+                        const currentBalance = accountData.balance || 0;
+                        const newBalance = currentBalance + orderData.total;
+                        const limit = accountData.limit || 0;
+                        
+                        transaction.update(bankAccountRef, { balance: newBalance });
+
+                        // Check if limit exceeded
+                        if (limit > 0 && newBalance >= limit) {
+                            // Deactivate current account
+                            transaction.update(bankAccountRef, { active: false });
+                            
+                            // Find next available account to activate
+                            const allAccountsSnap = await transaction.get(query(collection(db, 'bankAccounts'), orderBy('accountHolder')));
+                            const otherAccounts = allAccountsSnap.docs
+                                .filter(d => d.id !== bankAccountId)
+                                .map(d => ({ id: d.id, ...d.data() }));
+                            
+                            const nextAccount = otherAccounts.find(acc => {
+                                const accLimit = acc.limit || 0;
+                                const accBalance = acc.balance || 0;
+                                return accLimit === 0 || accBalance < accLimit;
+                            });
+
+                            if (nextAccount) {
+                                transaction.update(doc(db, 'bankAccounts', nextAccount.id), { active: true });
+                            }
+                        }
+                    }
+                } else if (isOldVerified && !isNewVerified) {
+                    // Payment reverted (cancelled or moved back) -> Decrease balance
+                    const bankAccountRef = doc(db, 'bankAccounts', bankAccountId);
+                    const bankAccountSnap = await transaction.get(bankAccountRef);
+                    if (bankAccountSnap.exists()) {
+                        const currentBalance = bankAccountSnap.data().balance || 0;
+                        transaction.update(bankAccountRef, { balance: Math.max(0, currentBalance - orderData.total) });
+                    }
+                }
+            }
+
+            // 3. Update Order Status
+            transaction.update(orderRef, { status: newStatus });
+        });
+    } catch (error) {
+        logError(error, 'updateOrderStatus', { orderId, newStatus });
+        throw error;
     }
 };
 

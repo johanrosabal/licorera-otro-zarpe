@@ -42,6 +42,7 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
+    DialogFooter,
 } from '@/components/ui/dialog';
 import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -56,12 +57,12 @@ function PurchaseDetailModal({ purchase, supplierName, onClose }) {
 
     return (
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-            <AlertDialogHeader>
-                <AlertDialogTitle>Detalle de Compra #{purchase.invoiceNumber}</AlertDialogTitle>
-                <AlertDialogDescription>
+            <DialogHeader>
+                <DialogTitle>Detalle de Compra #{purchase.invoiceNumber}</DialogTitle>
+                <DialogDescription>
                     Factura a {supplierName} del {purchase.invoiceDate ? format(purchase.invoiceDate.toDate(), "dd MMM yyyy", { locale: es }) : 'N/A'}.
-                </AlertDialogDescription>
-            </AlertDialogHeader>
+                </DialogDescription>
+            </DialogHeader>
             <div className="space-y-6">
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -118,9 +119,9 @@ function PurchaseDetailModal({ purchase, supplierName, onClose }) {
                 </div>
 
             </div>
-            <AlertDialogFooter>
+            <DialogFooter>
                 <Button variant="outline" onClick={onClose}>Cerrar</Button>
-            </AlertDialogFooter>
+            </DialogFooter>
         </DialogContent>
     );
 }

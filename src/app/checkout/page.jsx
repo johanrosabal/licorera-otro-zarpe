@@ -73,7 +73,6 @@ export default function CheckoutPage() {
     const [referenceCopied, setReferenceCopied] = useState(false);
     const [ibanCopied, setIbanCopied] = useState(false);
     const [sinpeCopied, setSinpeCopied] = useState(false);
-    const [showMapMode, setShowMapMode] = useState(false);
 
     const [paymentReference] = useState(() => Math.random().toString(36).substring(2, 7).toUpperCase());
 
@@ -292,71 +291,47 @@ export default function CheckoutPage() {
                                     <AlertTriangle className="h-5 w-5 text-blue-600" />
                                     <AlertTitle className="font-black text-lg">¡IMPORTANTE!</AlertTitle>
                                     <AlertDescription className="text-base">
-                                        Para garantizar que su pedido llegue correctamente, es **VITAL** que actualice su ubicación exacta usando el botón de abajo desde su celular o seleccionando en el mapa.
+                                        Para garantizar que su pedido llegue correctamente, es **VITAL** que verifique su ubicación exacta en el mapa de abajo. Use el botón de GPS para centrarlo.
                                     </AlertDescription>
                                 </Alert>
 
-                                {!showMapMode ? (
-                                    <div className="space-y-4">
-                                        <Button 
-                                            onClick={handleUpdateLocation} 
-                                            disabled={isLocating} 
-                                            size="lg" 
-                                            className="w-full text-xl h-20 font-black shadow-2xl bg-primary hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-95 ring-4 ring-primary/10"
-                                        >
-                                            {isLocating ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : <MapPin className="mr-3 h-8 w-8" />}
-                                            {isLocating ? 'OBTENIENDO GPS...' : 'ACTUALIZAR UBICACIÓN CON GPS'}
-                                        </Button>
-                                        
-                                        <div className="text-center">
-                                            <span className="text-xs text-muted-foreground font-bold uppercase tracking-widest">O TAMBIÉN</span>
-                                        </div>
+                                <div className="space-y-4">
+                                    <Button 
+                                        onClick={handleUpdateLocation} 
+                                        disabled={isLocating} 
+                                        size="lg" 
+                                        className="w-full text-xl h-16 font-black shadow-xl bg-primary hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-95"
+                                    >
+                                        {isLocating ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : <MapPin className="mr-3 h-7 w-7" />}
+                                        {isLocating ? 'OBTENIENDO GPS...' : 'CENTRAR MAPA CON MI GPS'}
+                                    </Button>
 
-                                        <Button 
-                                            variant="outline" 
-                                            size="lg" 
-                                            className="w-full h-14 border-2 border-primary text-primary font-black text-lg shadow-md hover:bg-primary/5"
-                                            onClick={() => setShowMapMode(true)}
-                                        >
-                                            <Map className="mr-2 h-6 w-6" />
-                                            BUSCAR UBICACIÓN POR MAPA
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <h3 className="font-black text-lg">Selector de Mapa</h3>
-                                            <Button variant="ghost" size="sm" onClick={() => setShowMapMode(false)} className="font-bold text-destructive">
-                                                <X className="mr-1 h-4 w-4" /> VOLVER A GPS
-                                            </Button>
+                                    <div className="rounded-xl overflow-hidden border-2 border-primary/20 shadow-lg animate-in fade-in zoom-in duration-700">
+                                        <div className="bg-primary/5 p-3 border-b border-primary/10 flex justify-between items-center">
+                                            <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
+                                                <Map className="h-4 w-4" /> Selector de Ubicación
+                                            </h3>
+                                            {locationCoords ? (
+                                                <Badge className="bg-green-100 text-green-700 border-green-200 gap-1 text-[10px]">
+                                                    <CheckCircle2 className="h-3 w-3" /> UBICACIÓN LISTA
+                                                </Badge>
+                                            ) : (
+                                                <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 gap-1 text-[10px]">
+                                                    <Info className="h-3 w-3" /> SELECCIONE EN MAPA
+                                                </Badge>
+                                            )}
                                         </div>
-                                        <LocationPicker 
-                                            initialCoords={locationCoords} 
-                                            onConfirm={handleMapLocationConfirm}
-                                            onCancel={() => setShowMapMode(false)}
-                                        />
+                                        <div>
+                                            <LocationPicker 
+                                                initialCoords={locationCoords} 
+                                                onConfirm={handleMapLocationConfirm}
+                                            />
+                                        </div>
                                     </div>
-                                )}
-
-                                <div className="flex justify-center">
-                                    {locationCoords ? (
-                                        <Badge className="bg-green-100 text-green-700 border-green-200 px-4 py-1 text-sm gap-2">
-                                            <CheckCircle2 className="h-4 w-4" /> Ubicación GPS Configurada
-                                        </Badge>
-                                    ) : (
-                                        <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 px-4 py-1 text-sm gap-2">
-                                            <Info className="h-4 w-4" /> GPS Pendiente de Actualizar
-                                        </Badge>
-                                    )}
                                 </div>
-
-                                {!locationCoords && !showMapMode && (
-                                    <Alert className="bg-orange-50 border-orange-200 text-orange-800">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        <AlertDescription>No has configurado tu ubicación exacta. Por favor usa los botones de arriba.</AlertDescription>
-                                    </Alert>
-                                )}
                             </div>
+
+
 
                            <Separator />
                            <div className="grid grid-cols-2 gap-4 text-sm">

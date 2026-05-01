@@ -28,6 +28,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { useForm } from 'react-hook-form';
@@ -35,18 +42,22 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { formatCurrency, formatCurrencyInput, parseFormattedCurrency, cn } from '@/lib/utils';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { getHomepageSettings } from '@/lib/settings';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { collection, onSnapshot, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { formatCurrency, formatCurrencyInput, parseFormattedCurrency } from '@/lib/utils';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { FileText } from 'lucide-react';
 
 const accountSchema = z.object({
   bankId: z.string().min(1, 'Debes seleccionar un banco.'),
   accountHolder: z.string().min(3, 'El nombre del titular es requerido.'),
   accountType: z.enum(['AHORROS', 'CORRIENTE'], { required_error: 'Debes seleccionar un tipo de cuenta.' }),
   accountNumber: z.string().min(5, 'El número de cuenta es requerido.'),
-  iban: z.string().optional(),
+  iban: z.string().max(22, 'El IBAN de Costa Rica tiene máximo 22 caracteres.').optional(),
   sinpeMovil: z.string().optional(),
   currency: z.enum(['CRC', 'USD'], { required_error: 'Debes seleccionar una moneda.' }),
   balance: z.coerce.number().optional().default(0),
@@ -112,133 +123,117 @@ function AccountForm({ account, banks, onFinished, onCancel }) {
   
 
   return (
-    <Card>
-        <CardHeader>
-            <CardTitle>{account ? 'Editar Cuenta Bancaria' : 'Añadir Nueva Cuenta Bancaria'}</CardTitle>
-            <CardDescription>
-            {account ? 'Actualiza los detalles de la cuenta.' : 'Introduce los detalles de la nueva cuenta bancaria.'}
-            </CardDescription>
-        </CardHeader>
-        <CardContent>
-            <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <FormField control={form.control} name="bankId" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Banco</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
-                                    <FormControl><SelectTrigger><SelectValue placeholder="Selecciona un banco" /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                        {banks.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="accountHolder" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Nombre del Titular</FormLabel>
-                                <FormControl><Input placeholder="Ej: Juan Mora" {...field} /></FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="accountType" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Tipo de Cuenta</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
-                                    <FormControl><SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                        <SelectItem value="AHORROS">Ahorros</SelectItem>
-                                        <SelectItem value="CORRIENTE">Corriente</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                    </div>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <FormField control={form.control} name="bankId" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Banco</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl><SelectTrigger><SelectValue placeholder="Selecciona un banco" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  {banks.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="accountHolder" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Nombre del Titular</FormLabel>
+              <FormControl><Input placeholder="Ej: Juan Mora" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="accountType" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Tipo de Cuenta</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl><SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="AHORROS">Ahorros</SelectItem>
+                  <SelectItem value="CORRIENTE">Corriente</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <FormField control={form.control} name="accountNumber" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Número de Cuenta</FormLabel>
-                                <FormControl><Input placeholder="Número de cuenta" {...field} /></FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="iban" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>IBAN (Opcional)</FormLabel>
-                                <FormControl><Input placeholder="CR..." {...field} /></FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="sinpeMovil" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>SINPE Móvil (Opcional)</FormLabel>
-                                <FormControl>
-                                    <Input 
-                                        type="tel" 
-                                        placeholder="88888888" 
-                                        {...field}
-                                    />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                    </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <FormField control={form.control} name="accountNumber" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Número de Cuenta</FormLabel>
+              <FormControl><Input placeholder="Número de cuenta" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="iban" render={({ field }) => (
+            <FormItem>
+              <FormLabel>IBAN (Opcional)</FormLabel>
+              <FormControl><Input placeholder="CR00000000000000000000" maxLength={22} {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="sinpeMovil" render={({ field }) => (
+            <FormItem>
+              <FormLabel>SINPE Móvil (Opcional)</FormLabel>
+              <FormControl><Input type="tel" placeholder="88888888" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
 
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <FormField control={form.control} name="currency" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Moneda</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
-                                    <FormControl><SelectTrigger><SelectValue placeholder="Moneda" /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                        <SelectItem value="CRC">Colones (CRC)</SelectItem>
-                                        <SelectItem value="USD">Dólares (USD)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="balance" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Saldo</FormLabel>
-                                <FormControl>
-                                   <Input type="text" value={formatCurrencyInput(field.value)} onChange={e => field.onChange(parseFormattedCurrency(e.target.value))} className="text-right" />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                         <FormField control={form.control} name="limit" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Monto Límite</FormLabel>
-                                <FormControl>
-                                   <Input type="text" value={formatCurrencyInput(field.value)} onChange={e => field.onChange(parseFormattedCurrency(e.target.value))} className="text-right" />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                    </div>
-                    
-                    <FormField control={form.control} name="active" render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                            <FormLabel className="text-base">Activa</FormLabel>
-                            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                        </FormItem>
-                    )} />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <FormField control={form.control} name="currency" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Moneda</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl><SelectTrigger><SelectValue placeholder="Moneda" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="CRC">Colones (CRC)</SelectItem>
+                  <SelectItem value="USD">Dólares (USD)</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="balance" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Saldo</FormLabel>
+              <FormControl>
+                <Input type="text" value={formatCurrencyInput(field.value)} onChange={e => field.onChange(parseFormattedCurrency(e.target.value))} className="text-right" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="limit" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Monto Límite</FormLabel>
+              <FormControl>
+                <Input type="text" value={formatCurrencyInput(field.value)} onChange={e => field.onChange(parseFormattedCurrency(e.target.value))} className="text-right" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
 
-                    <div className="flex justify-end gap-2">
-                        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
-                        <Button type="submit" disabled={submitting}>
-                            {submitting ? <Loader2 className="animate-spin mr-2" /> : null}
-                            {account ? 'Guardar Cambios' : 'Añadir Cuenta'}
-                        </Button>
-                    </div>
-                </form>
-            </Form>
-        </CardContent>
-    </Card>
+        <FormField control={form.control} name="active" render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <FormLabel className="text-base">Activa</FormLabel>
+            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+          </FormItem>
+        )} />
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? <Loader2 className="animate-spin mr-2" /> : null}
+            {account ? 'Guardar Cambios' : 'Añadir Cuenta'}
+          </Button>
+        </div>
+      </form>
+    </Form>
   )
 }
 
@@ -251,7 +246,14 @@ export default function AdminBankAccountsPage() {
   const [editingAccount, setEditingAccount] = useState(null);
   const [deletingAccount, setDeletingAccount] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [siteName, setSiteName] = useState('OTRO ZARPE');
   const { toast } = useToast();
+
+  useEffect(() => {
+    getHomepageSettings().then(settings => {
+      if (settings?.siteName) setSiteName(settings.siteName);
+    });
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -327,17 +329,132 @@ export default function AdminBankAccountsPage() {
     setIsFormOpen(true);
   }
 
+  const generateAccountReport = async (account) => {
+    try {
+        toast({ title: "Generando reporte...", description: "Estamos recopilando los movimientos de la cuenta." });
+        
+        // 1. Fetch all completed/paid orders for this bank account
+        const q = query(
+            collection(db, 'orders'),
+            where('paymentMethod.bankAccountId', '==', account.id),
+            orderBy('createdAt', 'asc')
+        );
+        
+        const querySnapshot = await getDocs(q);
+        const orders = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Filter only those that contributed to the balance
+        const VERIFIED_STATUSES = ['Pagado', 'En Preparación', 'Enviado', 'Completado'];
+        const verifiedOrders = orders.filter(o => VERIFIED_STATUSES.includes(o.status));
+
+        const doc = new jsPDF();
+        const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es });
+        const pdfFormatCurrency = (amount) => formatCurrency(amount, account.currency === 'CRC').replace(/₡|C\./g, '').trim();
+
+        // Header
+        const parts = siteName.split(' ');
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text(parts[0], 20, 20);
+        
+        if (parts.length > 1) {
+            doc.setTextColor(220, 38, 38);
+            doc.setFont('helvetica', 'bolditalic');
+            doc.text(parts.slice(1).join(' '), 20 + doc.getTextWidth(parts[0]) + 2, 20);
+        }
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 100, 100);
+        doc.text('ESTADO DE CUENTA BANCARIO', 20, 28);
+        doc.text(`Fecha de emisión: ${dateStr}`, 20, 34);
+
+        // Account Info Box
+        doc.setFillColor(245, 245, 245);
+        doc.rect(20, 40, 170, 35, 'F');
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Información de la Cuenta', 25, 47);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Titular: ${account.accountHolder}`, 25, 54);
+        doc.text(`Banco: ${bankMap[account.bankId] || 'N/A'}`, 25, 60);
+        doc.text(`N° Cuenta: ${account.accountNumber}`, 25, 66);
+        if (account.iban) doc.text(`IBAN: ${account.iban}`, 25, 72);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.text('Saldo Actual:', 130, 54);
+        doc.setFontSize(14);
+        doc.setTextColor(220, 38, 38);
+        doc.text(pdfFormatCurrency(account.balance), 130, 62);
+
+        // Movements Table
+        let runningBalance = 0;
+        const tableData = verifiedOrders.map(order => {
+            runningBalance += order.total;
+            return [
+                format(order.createdAt.toDate(), "dd/MM/yyyy HH:mm"),
+                `Orden #${order.invoiceNumber}`,
+                order.userName,
+                pdfFormatCurrency(order.total),
+                pdfFormatCurrency(runningBalance)
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 85,
+            head: [['Fecha', 'Documento', 'Detalle / Cliente', 'Monto', 'Saldo Acum.']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [31, 41, 55] },
+            styles: { fontSize: 8 },
+            columnStyles: {
+                3: { halign: 'right' },
+                4: { halign: 'right' }
+            }
+        });
+
+        // Pagination
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            doc.setFontSize(10);
+            doc.setTextColor(150, 150, 150);
+            doc.line(20, pageHeight - 15, pageWidth - 20, pageHeight - 15);
+            doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+            doc.text(siteName, 20, pageHeight - 10);
+        }
+
+        doc.save(`Estado_Cuenta_${account.accountNumber}_${format(new Date(), 'yyyyMMdd')}.pdf`);
+        toast({ title: "Reporte generado", description: "El estado de cuenta se ha descargado correctamente." });
+
+    } catch (error) {
+        console.error(error);
+        toast({ title: "Error", description: "No se pudo generar el reporte.", variant: "destructive" });
+    }
+  }
+
   return (
     <AuthorizedOnly allowedRoles={['ADMIN']}>
       <div className="space-y-6">
-        <Collapsible open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <CollapsibleContent>
-                <div className="mb-6">
-                    <AccountForm account={editingAccount} banks={banks} onFinished={handleFormFinished} onCancel={handleFormCancel} />
-                </div>
-            </CollapsibleContent>
-        </Collapsible>
-      
+
+        {/* Add / Edit Dialog */}
+        <Dialog open={isFormOpen} onOpenChange={(open) => { if (!open) handleFormCancel(); }}>
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingAccount ? 'Editar Cuenta Bancaria' : 'Añadir Nueva Cuenta Bancaria'}</DialogTitle>
+              <DialogDescription>
+                {editingAccount ? 'Actualiza los detalles de la cuenta.' : 'Introduce los detalles de la nueva cuenta bancaria.'}
+              </DialogDescription>
+            </DialogHeader>
+            <AccountForm account={editingAccount} banks={banks} onFinished={handleFormFinished} onCancel={handleFormCancel} />
+          </DialogContent>
+        </Dialog>
+
         <AlertDialog open={!!deletingAccount} onOpenChange={(open) => !open && setDeletingAccount(null)}>
             <AlertDialogContent>
             <AlertDialogHeader>
@@ -429,6 +546,11 @@ export default function AdminBankAccountsPage() {
                                             <Edit className="mr-2 h-4 w-4" />
                                             <span>Editar</span>
                                         </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => generateAccountReport(account)}>
+                                            <FileText className="mr-2 h-4 w-4" />
+                                            <span>Generar Reporte</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
                                         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDeletingAccount(account); }} className="text-destructive">
                                         <Trash2 className="mr-2 h-4 w-4" />
                                         <span>Eliminar</span>
@@ -473,6 +595,10 @@ export default function AdminBankAccountsPage() {
                                                 <DropdownMenuItem onClick={() => openForm(account)}>
                                                     <Edit className="mr-2 h-4 w-4" /><span>Editar</span>
                                                 </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => generateAccountReport(account)}>
+                                                    <FileText className="mr-2 h-4 w-4" /><span>Generar Reporte</span>
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
                                                 <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDeletingAccount(account); }} className="text-destructive">
                                                     <Trash2 className="mr-2 h-4 w-4" /><span>Eliminar</span>
                                                 </DropdownMenuItem>

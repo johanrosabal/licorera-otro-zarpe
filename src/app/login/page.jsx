@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useState } from 'react'
@@ -30,11 +29,10 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user;
+      const firebaseUser = userCredential.user;
 
-      const userDocRef = doc(db, 'users', user.uid);
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
-      
       let userRole = 'CLIENT';
       if (userDocSnap.exists()) {
         userRole = userDocSnap.data().role || 'CLIENT';
@@ -43,17 +41,13 @@ export default function LoginPage() {
       toast({ title: 'Inicio de sesión exitoso', description: '¡Bienvenido de nuevo!' })
 
       const redirectUrl = searchParams.get('redirect');
-      if (redirectUrl) {
-          router.push(redirectUrl)
-          return;
-      }
+      if (redirectUrl) { router.push(redirectUrl); return; }
 
       switch (userRole) {
-          case 'ADMIN': router.push('/admin/dashboard'); break;
-          case 'DELIVERY': router.push('/admin/shipping'); break;
-          default: router.push('/'); break;
+        case 'ADMIN': router.push('/admin/dashboard'); break;
+        case 'REPARTIDOR': router.push('/admin/shipping'); break;
+        default: router.push('/'); break;
       }
-      
     } catch (error) {
       let description = 'Ocurrió un error inesperado.';
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
@@ -70,19 +64,18 @@ export default function LoginPage() {
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const firebaseUser = result.user;
 
-      const userDocRef = doc(db, 'users', user.uid);
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
-
       let userRole = 'CLIENT';
 
       if (!userDocSnap.exists()) {
         await setDoc(userDocRef, {
-          authUID: user.uid,
-          name: user.displayName,
-          email: user.email,
-          photoURL: user.photoURL,
+          authUID: firebaseUser.uid,
+          name: firebaseUser.displayName,
+          email: firebaseUser.email,
+          photoURL: firebaseUser.photoURL,
           role: 'CLIENT',
           createdAt: serverTimestamp(),
         });
@@ -90,48 +83,36 @@ export default function LoginPage() {
         userRole = userDocSnap.data().role || 'CLIENT';
       }
 
-      toast({ title: '¡Bienvenido!', description: `Hola, ${user.displayName}` });
+      toast({ title: '¡Bienvenido!', description: `Hola, ${firebaseUser.displayName}` });
 
       const redirectUrl = searchParams.get('redirect');
-      if (redirectUrl) {
-        router.push(redirectUrl);
-        return;
-      }
+      if (redirectUrl) { router.push(redirectUrl); return; }
 
       switch (userRole) {
         case 'ADMIN': router.push('/admin/dashboard'); break;
-        case 'DELIVERY': router.push('/admin/shipping'); break;
+        case 'REPARTIDOR': router.push('/admin/shipping'); break;
         default: router.push('/'); break;
       }
     } catch (error) {
       setGoogleLoading(false);
-      
-      // Silent ignore if popup closed by user
       if (error.code === 'auth/popup-closed-by-user') return;
-
       if (error.code === 'auth/unauthorized-domain') {
         toast({
           title: 'Dominio no autorizado',
-          description: `Debes añadir "${window.location.hostname}" a los dominios autorizados en la Consola de Firebase (Auth > Ajustes).`,
+          description: `Añade "${window.location.hostname}" a los dominios autorizados en Firebase (Auth > Ajustes).`,
           variant: 'destructive',
         });
         return;
       }
-
       if (error.code === 'auth/account-exists-with-different-credential') {
         toast({
           title: 'Cuenta ya existe',
-          description: 'Ya tienes una cuenta registrada con este correo usando otro método (como contraseña). Por favor ingresa con ese método.',
+          description: 'Ya tienes una cuenta con este correo usando otro método. Ingresa con ese método.',
           variant: 'destructive',
         });
         return;
       }
-
-      toast({
-        title: 'Error de Google',
-        description: 'No se pudo completar el inicio de sesión.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error de Google', description: 'No se pudo completar el inicio de sesión.', variant: 'destructive' });
     }
   };
 

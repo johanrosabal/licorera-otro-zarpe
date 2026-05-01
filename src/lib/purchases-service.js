@@ -8,6 +8,7 @@ import { logError } from './errors';
 const purchasesCollection = collection(db, 'purchases');
 const productsCollectionRef = collection(db, 'products');
 const inventoryMovementsCollection = collection(db, 'inventoryMovements');
+const productCostHistoryCollection = collection(db, 'productCostHistory');
 
 async function uploadInvoiceImage(imageFile) {
     const storageRef = ref(storage, `invoices/${Date.now()}-${imageFile.name}`);
@@ -86,12 +87,35 @@ export const addPurchase = async (purchaseData, user) => {
         
         const currentStock = productDoc.data().stock || 0;
         const newStock = currentStock + (item.quantity || 0);
+        const previousCostPrice = productDoc.data().costPrice || 0;
+        const newCostPrice = item.costPrice || 0;
 
         transaction.update(productRef, { 
             stock: newStock,
-            costPrice: item.costPrice,
+            costPrice: newCostPrice,
             taxPercentage: item.taxPercentage 
         });
+
+        // Record cost history if price changed
+        if (Math.abs(previousCostPrice - newCostPrice) > 0.01) {
+          const costHistoryRef = doc(productCostHistoryCollection);
+          transaction.set(costHistoryRef, {
+            productId: item.productId,
+            productName: productDoc.data().name,
+            previousCostPrice,
+            newCostPrice,
+            difference: newCostPrice - previousCostPrice,
+            differencePercentage: previousCostPrice > 0
+              ? ((newCostPrice - previousCostPrice) / previousCostPrice) * 100
+              : 0,
+            purchaseId: purchaseDocRef.id,
+            invoiceNumber: purchaseData.invoiceNumber,
+            supplierId: purchaseData.supplierId,
+            taxesIncluded: purchaseData.taxesIncluded ?? false,
+            createdAt: serverTimestamp(),
+            createdBy: { uid: user.uid, email: user.email },
+          });
+        }
 
         const movementDocRef = doc(inventoryMovementsCollection);
         const movementData = {
@@ -191,12 +215,35 @@ export const updatePurchase = async (purchaseId, oldPurchaseData, newPurchaseDat
                     const productRef = doc(productsCollectionRef, item.productId);
                     const currentStock = productData.stock || 0;
                     const newStock = currentStock + item.quantity;
+                    const previousCostPrice = productData.costPrice || 0;
+                    const newCostPrice = item.costPrice || 0;
                     
                     transaction.update(productRef, { 
                         stock: newStock,
-                        costPrice: item.costPrice,
+                        costPrice: newCostPrice,
                         taxPercentage: item.taxPercentage 
                     });
+
+                    // Record cost history if price changed
+                    if (Math.abs(previousCostPrice - newCostPrice) > 0.01) {
+                      const costHistoryRef = doc(productCostHistoryCollection);
+                      transaction.set(costHistoryRef, {
+                        productId: item.productId,
+                        productName: productData.name,
+                        previousCostPrice,
+                        newCostPrice,
+                        difference: newCostPrice - previousCostPrice,
+                        differencePercentage: previousCostPrice > 0
+                          ? ((newCostPrice - previousCostPrice) / previousCostPrice) * 100
+                          : 0,
+                        purchaseId,
+                        invoiceNumber: newPurchaseData.invoiceNumber,
+                        supplierId: newPurchaseData.supplierId,
+                        taxesIncluded: newPurchaseData.taxesIncluded ?? false,
+                        createdAt: serverTimestamp(),
+                        createdBy: { uid: user.uid, email: user.email },
+                      });
+                    }
 
                     const movementDocRef = doc(inventoryMovementsCollection);
                     transaction.set(movementDocRef, {
@@ -245,6 +292,26 @@ export const getPurchases = async () => {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } catch (error) {
         logError(error, 'getPurchases');
+        throw error;
+    }
+};
+
+/**
+ * Returns the cost price change history for a specific product.
+ * @param {string} productId
+ * @returns {Promise<Array>}
+ */
+export const getProductCostHistory = async (productId) => {
+    try {
+        const q = query(
+            productCostHistoryCollection,
+            where('productId', '==', productId),
+            orderBy('createdAt', 'desc')
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (error) {
+        logError(error, 'getProductCostHistory', { productId });
         throw error;
     }
 };

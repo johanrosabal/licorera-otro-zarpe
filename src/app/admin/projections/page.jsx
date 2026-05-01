@@ -16,6 +16,12 @@ import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { getHomepageSettings } from '@/lib/settings';
+import { FileDown } from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 export default function SalesProjectionPage() {
   const [products, setProducts] = useState([]);
@@ -28,6 +34,13 @@ export default function SalesProjectionPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState('all');
+  const [siteName, setSiteName] = useState('OTRO ZARPE');
+
+  useEffect(() => {
+    getHomepageSettings().then(settings => {
+      if (settings?.siteName) setSiteName(settings.siteName);
+    });
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -100,16 +113,126 @@ export default function SalesProjectionPage() {
     setSelectedBrand('all');
   };
 
+  const generatePDF = () => {
+    const doc = new jsPDF();
+    const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es });
+    
+    // Helper to fix the CRC symbol issue in PDF by removing it entirely
+    const pdfFormatCurrency = (amount) => formatCurrency(amount, false);
+
+    // Header
+    const parts = siteName.split(' ');
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(parts[0], 20, 20);
+    
+    if (parts.length > 1) {
+      doc.setTextColor(220, 38, 38); // Red-600
+      doc.setFont('helvetica', 'bolditalic');
+      doc.text(parts.slice(1).join(' '), 20 + doc.getTextWidth(parts[0]) + 2, 20);
+    }
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('REPORTE DE PROYECCIÓN DE VENTAS Y GANANCIAS', 20, 28);
+    doc.text(`Fecha: ${dateStr}`, 20, 34);
+
+    // Summary Section
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Resumen General', 20, 45);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Concepto', 'Monto Total']],
+      body: [
+        ['Proyección de Ventas (Stock Total)', pdfFormatCurrency(totals.totalProjectedSales)],
+        ['Costo de Inventario (Stock Total)', pdfFormatCurrency(totals.totalCost)],
+        ['Ganancia Bruta Proyectada', pdfFormatCurrency(projectedProfit)],
+        ['Margen Bruto Promedio', `${((projectedProfit / totals.totalProjectedSales) * 100).toFixed(2)}%`]
+      ],
+      theme: 'grid',
+      headStyles: { fillStyle: 'red', fillColor: [220, 38, 38] },
+      styles: { fontSize: 10, cellPadding: 3 }
+    });
+
+    // Details Section
+    doc.setFontSize(14);
+    doc.text('Detalle por Producto', 20, doc.lastAutoTable.finalY + 15);
+
+    const tableData = filteredProducts.map(p => {
+        const cost = p.costPrice || 0;
+        const sell = p.sellingPrice || 0;
+        const stock = p.stock || 0;
+        const profit = (sell - cost) * stock;
+        const margin = sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+        return [
+            p.name,
+            stock,
+            pdfFormatCurrency(cost),
+            pdfFormatCurrency(sell),
+            pdfFormatCurrency(sell * stock),
+            pdfFormatCurrency(profit),
+            `${margin.toFixed(1)}%`
+        ];
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 20,
+      head: [['Producto', 'Stock', 'Costo U.', 'Venta U.', 'Venta T.', 'Ganancia', 'Margen']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [31, 41, 55] }, // Slate-800
+      styles: { fontSize: 8 },
+      columnStyles: {
+        1: { halign: 'right' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'right' }
+      }
+    });
+
+    // Add Pagination Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(10);
+        doc.setTextColor(150, 150, 150);
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        
+        // Horizontal line
+        doc.setDrawColor(200, 200, 200);
+        doc.line(20, pageHeight - 15, pageWidth - 20, pageHeight - 15);
+        
+        // Page info
+        doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text(siteName, 20, pageHeight - 10);
+        doc.text(dateStr, pageWidth - 20, pageHeight - 10, { align: 'right' });
+    }
+
+    doc.save(`Proyeccion_Ventas_${format(new Date(), 'yyyyMMdd')}.pdf`);
+  };
+
   return (
     <AuthorizedOnly allowedRoles={['ADMIN']}>
       <div className="space-y-6">
         <Card>
-            <CardHeader>
-                <CardTitle>Proyección de Ventas y Ganancias</CardTitle>
-                <CardDescription>
-                    Una estimación del valor del inventario actual a precio de venta y costo.
-                    Solo se consideran productos activos, con stock y que no sean de uso interno.
-                </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                    <CardTitle>Proyección de Ventas y Ganancias</CardTitle>
+                    <CardDescription>
+                        Una estimación del valor del inventario actual a precio de venta y costo.
+                    </CardDescription>
+                </div>
+                <Button onClick={generatePDF} className="bg-red-600 hover:bg-red-700 shadow-md transition-all">
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Exportar PDF
+                </Button>
             </CardHeader>
             <CardContent>
                 <div className="grid gap-4 md:grid-cols-3">

@@ -362,7 +362,7 @@ export default function AdminPaymentMethodsPage() {
                         <Card key={method.id} className="p-4">
                             <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <p className="font-semibold">{method.name} <Badge variant="secondary" className="ml-2">{method.type}</Badge></p>
+                                    <div className="font-semibold flex items-center gap-1">{method.name} <Badge variant="secondary" className="ml-2">{method.type}</Badge></div>
                                     <p className="text-sm text-muted-foreground">Orden: {method.order}</p>
                                 </div>
                                 <DropdownMenu>

@@ -5,6 +5,7 @@ import { Search, MapPin, Check, X, Loader2 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
+import { cn } from '@/lib/utils';
 
 export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
   const mapContainerRef = useRef(null);
@@ -42,9 +43,11 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
         iconAnchor: [12, 41],
       });
 
-      map = L.map(mapContainerRef.current).setView(
+      map = L.map(mapContainerRef.current, {
+        scrollWheelZoom: false,
+      }).setView(
         [defaultCoords.lat, defaultCoords.lng],
-        15
+        18
       );
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -161,11 +164,13 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
         </div>
 
         <div className="p-4 bg-background border-t flex gap-2">
-          <Button variant="outline" className="flex-1 font-bold h-12" onClick={onCancel}>
-            <X className="mr-2 h-4 w-4" /> CANCELAR
-          </Button>
-          <Button className="flex-1 font-black h-12 text-lg shadow-lg" onClick={() => onConfirm(position)}>
-            <Check className="mr-2 h-5 w-5" /> CONFIRMAR
+          {onCancel && (
+            <Button variant="outline" className="flex-1 font-bold h-12" onClick={onCancel}>
+              <X className="mr-2 h-4 w-4" /> CANCELAR
+            </Button>
+          )}
+          <Button className={cn("flex-1 font-black h-12 text-lg shadow-lg", !onCancel && "w-full")} onClick={() => onConfirm(position)}>
+            <Check className="mr-2 h-5 w-5" /> CONFIRMAR UBICACIÓN
           </Button>
         </div>
       </CardContent>

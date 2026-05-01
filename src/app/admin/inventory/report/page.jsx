@@ -31,6 +31,9 @@ import { Label } from '@/components/ui/label';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { getHomepageSettings } from '@/lib/settings';
 
 
 const movementSchema = z.object({
@@ -378,7 +381,14 @@ export default function InventoryReportPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [siteName, setSiteName] = useState('OTRO ZARPE');
   const { user } = useAuth();
+
+  useEffect(() => {
+    getHomepageSettings().then(settings => {
+      if (settings?.siteName) setSiteName(settings.siteName);
+    });
+  }, []);
 
   // Filter states
   const [selectedProduct, setSelectedProduct] = useState('all');
@@ -489,6 +499,99 @@ export default function InventoryReportPage() {
       setIsDetailModalOpen(true);
   }
 
+  const generatePDF = () => {
+    try {
+        const doc = new jsPDF();
+        const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es });
+        const pdfFormatCurrency = (amount) => formatCurrency(amount).replace(/₡|C\./g, '').trim();
+
+        // Header
+        const parts = siteName.split(' ');
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text(parts[0], 20, 20);
+        
+        if (parts.length > 1) {
+            doc.setTextColor(220, 38, 38);
+            doc.setFont('helvetica', 'bolditalic');
+            doc.text(parts.slice(1).join(' '), 20 + doc.getTextWidth(parts[0]) + 2, 20);
+        }
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 100, 100);
+        doc.text('REPORTE DE INVENTARIO Y STOCK', 20, 28);
+        doc.text(`Generado el: ${dateStr}`, 20, 34);
+
+        // Filters info
+        let filterText = "Filtros aplicados: Ninguno";
+        if (selectedProduct !== 'all' || selectedType !== 'all' || selectedUser !== 'all' || dateRange || filterOutOfStock) {
+            filterText = "Filtros activos: ";
+            if (selectedProduct !== 'all') filterText += "Producto específico, ";
+            if (selectedType !== 'all') filterText += `Tipo: ${selectedType}, `;
+            if (filterOutOfStock) filterText += "Solo agotados, ";
+            if (dateRange) filterText += "Rango de fechas, ";
+            filterText = filterText.replace(/, $/, "");
+        }
+        doc.setFontSize(8);
+        doc.text(filterText, 20, 40);
+
+        // Table Data
+        const tableData = filteredProductList.map(p => [
+            p.name,
+            p.category || 'N/A',
+            p.stock,
+            pdfFormatCurrency(p.costPrice || 0),
+            pdfFormatCurrency(p.stock * (p.costPrice || 0))
+        ]);
+
+        const totalStock = filteredProductList.reduce((acc, p) => acc + p.stock, 0);
+        const totalValue = filteredProductList.reduce((acc, p) => acc + (p.stock * (p.costPrice || 0)), 0);
+
+        autoTable(doc, {
+            startY: 45,
+            head: [['Producto', 'Categoría', 'Stock', 'Costo Unit.', 'Valor Total']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [31, 41, 55] },
+            styles: { fontSize: 8 },
+            columnStyles: {
+                2: { halign: 'center' },
+                3: { halign: 'right' },
+                4: { halign: 'right' }
+            },
+            foot: [[
+                'TOTAL GENERAL',
+                '',
+                totalStock,
+                '',
+                pdfFormatCurrency(totalValue)
+            ]],
+            footStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: 'bold' }
+        });
+
+        // Pagination
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            doc.setFontSize(10);
+            doc.setTextColor(150, 150, 150);
+            doc.line(20, pageHeight - 15, pageWidth - 20, pageHeight - 15);
+            doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+            doc.text(siteName, 20, pageHeight - 10);
+        }
+
+        doc.save(`Reporte_Inventario_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+        toast({ title: "PDF Generado", description: "El reporte se ha descargado correctamente." });
+    } catch (error) {
+        console.error(error);
+        toast({ title: "Error", description: "No se pudo generar el reporte PDF.", variant: "destructive" });
+    }
+  }
+
   return (
     <AuthorizedOnly allowedRoles={['ADMIN']}>
        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
@@ -517,10 +620,16 @@ export default function InventoryReportPage() {
                   Resumen de stock por producto. Haz clic en "Ver Movimientos" para ver el detalle.
                 </CardDescription>
               </div>
-              <Button onClick={() => setIsAddModalOpen(true)}>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Registrar Movimiento
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={generatePDF}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Exportar PDF
+                  </Button>
+                  <Button onClick={() => setIsAddModalOpen(true)}>
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Registrar Movimiento
+                  </Button>
+              </div>
           </div>
           <div className="mt-6 border-t pt-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 items-center">
