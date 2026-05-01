@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Search } from 'lucide-react'
+import { ArrowRight, Search, Construction, Wine, Clock } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { useEffect, useState, useMemo } from 'react'
 import { db } from '@/lib/firebase'
@@ -20,6 +20,7 @@ export default function Home() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [featuredSearchTerm, setFeaturedSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
   const handleProductClick = (product) => {
@@ -33,8 +34,13 @@ export default function Home() {
       where("active", "==", true)
     );
     
+    setLoading(true);
     const allProductsUnsubscribe = onSnapshot(productsQuery, (snapshot) => {
         setAllProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setLoading(false);
+    }, (err) => {
+        console.error(err);
+        setLoading(false);
     });
 
     // Listener for active categories
@@ -190,6 +196,34 @@ export default function Home() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {!loading && visibleProducts.length === 0 && (
+          <section className="flex flex-col items-center justify-center py-20 text-center space-y-6 animate-in fade-in zoom-in duration-500">
+            <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
+                <Construction className="h-24 w-24 text-primary relative z-10 animate-pulse" />
+            </div>
+            <div className="space-y-2 relative z-10">
+                <h2 className="text-4xl md:text-6xl font-headline bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                    Próximamente
+                </h2>
+                <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+                    Estamos preparando nuestra mejor selección para ti. <br />
+                    Vuelve pronto para descubrir experiencias exclusivas.
+                </p>
+            </div>
+            <div className="flex gap-4 pt-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground bg-muted/50 px-4 py-2 rounded-full border border-primary/10">
+                    <Clock className="h-4 w-4" />
+                    Apertura Inminente
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground bg-muted/50 px-4 py-2 rounded-full border border-primary/10">
+                    <Wine className="h-4 w-4" />
+                    Selección Premium
+                </div>
             </div>
           </section>
         )}

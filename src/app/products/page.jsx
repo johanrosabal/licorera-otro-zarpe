@@ -7,7 +7,7 @@ import { useSearchParams } from 'next/navigation'
 import { ProductCard } from '@/components/product-card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Search, Construction, Wine, Clock } from 'lucide-react'
 import { getCategories } from '@/lib/categories'
 import { getBrands } from '@/lib/brands'
 import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore'
@@ -208,10 +208,39 @@ export default function ProductsPage() {
               <ProductCard key={product.id} product={product} onProductClick={() => handleProductClick(product)} />
             ))}
           </div>
+        ) : !loading && visibleProducts.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="flex flex-col items-center justify-center space-y-6 animate-in fade-in zoom-in duration-500">
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
+                <Wine className="h-20 w-20 text-primary relative z-10 animate-bounce" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl md:text-5xl font-headline bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                    Catálogo en Actualización
+                </h2>
+                <p className="text-lg text-muted-foreground max-w-md mx-auto">
+                    Estamos renovando nuestro inventario con las mejores marcas del mundo. <br />
+                    Regresa pronto para ver nuestras novedades.
+                </p>
+              </div>
+              <div className="flex gap-4 pt-4 opacity-70">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-tighter text-muted-foreground border-b border-primary/20 pb-1">
+                    <Construction className="h-3 w-3" />
+                    Mantenimiento
+                </div>
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-tighter text-muted-foreground border-b border-primary/20 pb-1">
+                    <Clock className="h-3 w-3" />
+                    Próximamente
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="text-center py-16">
-            <p className="text-2xl font-headline text-muted-foreground">No se encontraron productos</p>
-            <p className="text-muted-foreground mt-2">Intenta cambiar tu búsqueda o filtros.</p>
+            <Search className="mx-auto h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+            <p className="text-xl font-headline text-muted-foreground">No hay coincidencias</p>
+            <p className="text-muted-foreground mt-2">Intenta cambiar tus filtros o búsqueda.</p>
           </div>
         )}
       </div>

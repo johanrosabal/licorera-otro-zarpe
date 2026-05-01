@@ -11,26 +11,26 @@ import { NotificationBanner } from '@/components/layout/notification-banner'
 
 export const metadata = {
   title: {
-    default: 'Licorera Otro Zarpe | Licores Premium y Selección Exclusiva',
-    template: '%s | Licorera Otro Zarpe'
+    default: 'Licorera Los Tios | Licores Premium y Selección Exclusiva',
+    template: '%s | Licorera Los Tios'
   },
   description: 'Descubre la mejor selección de licores premium, vinos y cervezas en Costa Rica. Entrega a domicilio rápida y segura. Calidad garantizada en cada botella.',
   keywords: ['licorera', 'licores costa rica', 'vinos', 'cervezas artesanales', 'whisky premium', 'ron', 'entrega licores', 'licorera online'],
-  authors: [{ name: 'Licorera Otro Zarpe' }],
-  creator: 'Licorera Otro Zarpe',
+  authors: [{ name: 'Licorera Los Tios' }],
+  creator: 'Licorera Los Tios',
   openGraph: {
     type: 'website',
     locale: 'es_CR',
-    url: 'https://licorera-otro-zarpe.web.app',
-    siteName: 'Licorera Otro Zarpe',
-    title: 'Licorera Otro Zarpe | Tu Licorera Premium',
+    url: 'https://licorera-los-tios.web.app',
+    siteName: 'Licorera Los Tios',
+    title: 'Licorera Los Tios | Tu Licorera Premium',
     description: 'La mejor selección de licores con entrega a domicilio.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Licorera Otro Zarpe',
+        alt: 'Licorera Los Tios',
       },
     ],
   },

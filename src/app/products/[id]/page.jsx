@@ -13,7 +13,7 @@ export async function generateMetadata({ params }) {
 
   return {
     title: product.name,
-    description: product.description || `Compra ${product.name} en Licorera Otro Zarpe. La mejor selección de licores con entrega a domicilio.`,
+    description: product.description || `Compra ${product.name} en Licorera Los Tios. La mejor selección de licores con entrega a domicilio.`,
     openGraph: {
       title: product.name,
       description: product.description,

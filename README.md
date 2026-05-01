@@ -409,8 +409,36 @@ npm run start
 
 ## 📝 Notas Técnicas
 
-- **Mapas:** Se usa Leaflet directamente (sin `react-leaflet`) para evitar incompatibilidades con React 18 StrictMode (`Map container is already initialized`).
-- **Stock de combos:** Se calcula en el frontend en tiempo real — nunca se persiste en Firestore para evitar inconsistencias.
-- **Transacciones atómicas:** La creación de órdenes, cancelaciones y compras usan `runTransaction` de Firestore para garantizar consistencia entre el documento principal y los movimientos de inventario.
-- **Carrito híbrido:** Los usuarios no autenticados usan `localStorage`; al iniciar sesión, el carrito local se fusiona con el de Firestore.
-- **Roles en tiempo real:** `useAuth` usa `onSnapshot` sobre el documento del usuario, por lo que un cambio de rol por el administrador se refleja inmediatamente sin necesidad de cerrar sesión.
+### 🚀 Características de Administración y SEO (Actualización v1.2)
+
+#### 🔐 Registro de Administradores
+Para garantizar la seguridad, el registro de administradores no es público.
+- **Acceso**: Se activa mediante el parámetro secreto en la URL: `/signup?mode=admin`.
+- **Validación**: Requiere una **Clave Maestra** almacenada en `admin_secret.json` en la raíz del proyecto.
+- **Seguridad**: El proceso de validación ocurre del lado del servidor (API) para evitar la exposición de claves en el frontend.
+
+#### 📊 Gestión de Datos (Exportar/Importar)
+Se han añadido herramientas de portabilidad de datos en las pantallas de configuración (Categorías y Marcas):
+- **Exportar**: Descarga un respaldo completo en formato JSON.
+- **Importar**: Permite la carga masiva de datos desde archivos JSON, ideal para migraciones rápidas entre proyectos.
+
+#### 🛠️ Gestión Avanzada de Usuarios
+- **Eliminación Total**: Los administradores pueden eliminar usuarios permanentemente. 
+- **Sincronización**: Al borrar un usuario, el sistema elimina tanto su perfil en Firestore como su cuenta de acceso en **Firebase Authentication** mediante el Admin SDK.
+- **Requisito**: Requiere que el archivo `firebase-admin-key.json` esté presente en la raíz (y configurado en variables de entorno en producción).
+
+#### 🔍 Optimización SEO y Visibilidad
+- **Metadatos Dinámicos**: Cada producto genera su propio título y descripción para buscadores (`generateMetadata`).
+- **Sitemap.xml**: Generación automática y dinámica en `/sitemap.xml` que incluye todas las rutas y productos activos para acelerar la indexación en Google.
+- **Splash Screen Inteligente**: El sitio permanece en estado de "Splash" hasta que todos los recursos visuales (imágenes y estilos) están cargados al 100%, garantizando una primera impresión premium.
+
+#### 🚧 Modo Mantenimiento
+- El sitio detecta automáticamente si el catálogo está vacío y muestra una **Vista de Próximamente / Catálogo en Actualización** profesional, evitando que el sitio parezca "roto" durante procesos de migración o inventario.
+
+---
+
+### 🛠️ Notas de Implementación Técnica (Update)
+
+- **Firebase Admin SDK**: Se implementó una inicialización robusta con singleton para manejar credenciales locales (`firebase-admin-key.json`) y de producción (`FIREBASE_SERVICE_ACCOUNT_KEY`).
+- **Seguridad de Archivos**: Los archivos `firebase-admin-key.json` y `admin_secret.json` están protegidos por `.gitignore` por defecto.
+- **Carga de Assets**: Se usa el evento `load` del navegador para gestionar la transición del Splash Screen.

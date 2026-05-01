@@ -114,8 +114,8 @@ export function Header() {
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [deliveriesEnabled, setDeliveriesEnabled] = React.useState(true);
   const [storeLocationUrl, setStoreLocationUrl] = React.useState('');
-  const [siteName, setSiteName] = React.useState('OTRO ZARPE');
-  const [siteSlogan, setSiteSlogan] = React.useState('PREMIUM SELECTION');
+  const [siteName, setSiteName] = React.useState('LOS TIOS');
+  const [siteSlogan, setSiteSlogan] = React.useState('LICORERA EXCLUSIVA');
 
   React.useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'homepage'), (doc) => {

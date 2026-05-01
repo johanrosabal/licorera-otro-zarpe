@@ -11,7 +11,8 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { addCategory, deleteCategory, updateCategory } from '@/lib/categories';
-import { PlusCircle, Trash2, Loader2, Edit, Search, Upload, X, Tag } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, Search, Upload, X, Tag, Download } from 'lucide-react';
+import { exportToJSON, importFromJSON } from '@/lib/data-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,6 +90,46 @@ export default function AdminCategoriesPage() {
     }
   }
   
+  const handleExport = () => {
+    exportToJSON(categories, 'categorias');
+    toast({ title: "Éxito", description: "Datos exportados correctamente." });
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+        const data = await importFromJSON(file);
+        if (!Array.isArray(data)) throw new Error("El formato del archivo debe ser un array de objetos.");
+        
+        setLoading(true);
+        let importedCount = 0;
+        
+        for (const item of data) {
+            // Basic validation
+            if (!item.name) continue;
+            
+            // Clean data for Firestore (remove ID if we want to create new ones, or keep it if we want to sync)
+            const { id, ...cleanItem } = item;
+            
+            // Default active if not present
+            if (cleanItem.active === undefined) cleanItem.active = true;
+            
+            await addCategory(cleanItem);
+            importedCount++;
+        }
+        
+        toast({ title: "Importación completa", description: `Se han importado ${importedCount} categorías.` });
+    } catch (error) {
+        toast({ title: "Error de importación", description: error.message, variant: "destructive" });
+    } finally {
+        setLoading(false);
+        // Reset input
+        e.target.value = '';
+    }
+  };
+
   const openEditDialog = (category) => {
     setEditingCategory(category);
     setIsEditDialogOpen(true);
@@ -234,10 +275,31 @@ export default function AdminCategoriesPage() {
                     <CardTitle>Categorías Existentes</CardTitle>
                     <CardDescription>Edita, activa/desactiva y elimina las categorías de tu tienda.</CardDescription>
                   </div>
-                  <Button onClick={() => setIsAddDialogOpen(true)}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Añadir Categoría
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleExport}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar
+                    </Button>
+                    <div className="relative">
+                        <Input 
+                            type="file" 
+                            id="import-categories" 
+                            className="hidden" 
+                            accept=".json" 
+                            onChange={handleImport}
+                        />
+                        <Button variant="outline" size="sm" asChild>
+                            <label htmlFor="import-categories" className="cursor-pointer">
+                                <Upload className="mr-2 h-4 w-4" />
+                                Importar
+                            </label>
+                        </Button>
+                    </div>
+                    <Button onClick={() => setIsAddDialogOpen(true)} size="sm">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Añadir
+                    </Button>
+                  </div>
                 </div>
                 <div className="relative mt-4">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />

@@ -10,7 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getBrands, addBrand, deleteBrand, updateBrand } from '@/lib/brands';
-import { PlusCircle, Trash2, Loader2, Edit, Bookmark, Search } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, Bookmark, Search, Download, Upload } from 'lucide-react';
+import { exportToJSON, importFromJSON } from '@/lib/data-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,6 +123,37 @@ export default function AdminBrandsPage() {
     }
   }
   
+  const handleExport = () => {
+    exportToJSON(brands, 'marcas');
+    toast({ title: "Éxito", description: "Datos exportados correctamente." });
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+        const data = await importFromJSON(file);
+        if (!Array.isArray(data)) throw new Error("El formato del archivo debe ser un array de objetos.");
+        
+        setLoading(true);
+        let importedCount = 0;
+        
+        for (const item of data) {
+            if (!item.name) continue;
+            await addBrand(item.name);
+            importedCount++;
+        }
+        
+        toast({ title: "Importación completa", description: `Se han importado ${importedCount} marcas.` });
+    } catch (error) {
+        toast({ title: "Error de importación", description: error.message, variant: "destructive" });
+    } finally {
+        setLoading(false);
+        e.target.value = '';
+    }
+  };
+
   const openEditDialog = (brand) => {
     setEditingBrand(brand);
     setEditingBrandName(brand.name);
@@ -138,13 +170,33 @@ export default function AdminBrandsPage() {
                             <CardTitle>Marcas de Productos</CardTitle>
                             <CardDescription>Edita, activa/desactiva y elimina las marcas de tu tienda.</CardDescription>
                         </div>
-                         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button>
-                                    <PlusCircle className="mr-2 h-4 w-4" />
-                                    Añadir Marca
+                         <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={handleExport}>
+                                <Download className="mr-2 h-4 w-4" />
+                                Exportar
+                            </Button>
+                            <div className="relative">
+                                <Input 
+                                    type="file" 
+                                    id="import-brands" 
+                                    className="hidden" 
+                                    accept=".json" 
+                                    onChange={handleImport}
+                                />
+                                <Button variant="outline" size="sm" asChild>
+                                    <label htmlFor="import-brands" className="cursor-pointer">
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        Importar
+                                    </label>
                                 </Button>
-                            </DialogTrigger>
+                            </div>
+                             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button size="sm">
+                                        <PlusCircle className="mr-2 h-4 w-4" />
+                                        Añadir
+                                    </Button>
+                                </DialogTrigger>
                             <DialogContent>
                                 <form onSubmit={handleAddBrand}>
                                     <DialogHeader>
@@ -174,7 +226,8 @@ export default function AdminBrandsPage() {
                             </DialogContent>
                         </Dialog>
                     </div>
-                    <div className="relative mt-4">
+                </div>
+                <div className="relative mt-4">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                         <Input
                             placeholder="Buscar marca..."

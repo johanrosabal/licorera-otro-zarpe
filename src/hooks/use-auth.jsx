@@ -23,8 +23,8 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [siteName, setSiteName] = useState('OTRO ZARPE');
-  const [siteSlogan, setSiteSlogan] = useState('PREMIUM SELECTION');
+  const [siteName, setSiteName] = useState('LOS TIOS');
+  const [siteSlogan, setSiteSlogan] = useState('LICORERA EXCLUSIVA');
   const [imagesLoaded, setImagesLoaded] = useState(false);
 
   useEffect(() => {
@@ -106,8 +106,8 @@ export const AuthProvider = ({ children }) => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'homepage'), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        setSiteName(data.siteName ?? 'OTRO ZARPE');
-        setSiteSlogan(data.siteSlogan ?? 'PREMIUM SELECTION');
+        setSiteName(data.siteName ?? 'LOS TIOS');
+        setSiteSlogan(data.siteSlogan ?? 'LICORERA EXCLUSIVA');
       }
     });
 

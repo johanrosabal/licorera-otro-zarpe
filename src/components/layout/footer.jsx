@@ -32,8 +32,8 @@ function WhatsAppIcon(props) {
 export function Footer() {
   const currentYear = new Date().getFullYear()
   const [socials, setSocials] = useState({ facebookUrl: '', instagramUrl: '', twitterUrl: '', whatsappUrl: '' });
-  const [siteName, setSiteName] = useState('OTRO ZARPE');
-  const [siteSlogan, setSiteSlogan] = useState('PREMIUM SELECTION');
+  const [siteName, setSiteName] = useState('LOS TIOS');
+  const [siteSlogan, setSiteSlogan] = useState('LICORERA EXCLUSIVA');
 
   useEffect(() => {
     const settingsRef = doc(db, 'settings', 'homepage');
@@ -95,7 +95,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          <p>&copy; {currentYear} Licorera Otro Zarpe. Todos los derechos reservados.</p>
+          <p>&copy; {currentYear} Licorera Los Tios. Todos los derechos reservados.</p>
           <p className="mt-1">El consumo de alcohol es perjudicial para la salud. Prohibida la venta a menores de 18 años.</p>
         </div>
       </div>
