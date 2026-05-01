@@ -25,6 +25,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [siteName, setSiteName] = useState('OTRO ZARPE');
   const [siteSlogan, setSiteSlogan] = useState('PREMIUM SELECTION');
+  const [imagesLoaded, setImagesLoaded] = useState(false);
+
+  useEffect(() => {
+    // Wait for all assets (including images) to load
+    const handleLoad = () => setImagesLoaded(true);
+
+    if (document.readyState === 'complete') {
+      setImagesLoaded(true);
+    } else {
+      window.addEventListener('load', handleLoad);
+      return () => window.removeEventListener('load', handleLoad);
+    }
+  }, []);
 
   useEffect(() => {
     let unsubSnapshot = null;
@@ -109,7 +122,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {loading ? (
+      {loading || !imagesLoaded ? (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background">
             <div className="animate-blur-in flex flex-col items-center w-full max-w-md px-8">
                 <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isSplash />

@@ -10,8 +10,34 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { NotificationBanner } from '@/components/layout/notification-banner'
 
 export const metadata = {
-  title: 'Licorera Otro Zarpe',
-  description: 'Tu licorera favorita.',
+  title: {
+    default: 'Licorera Otro Zarpe | Licores Premium y Selección Exclusiva',
+    template: '%s | Licorera Otro Zarpe'
+  },
+  description: 'Descubre la mejor selección de licores premium, vinos y cervezas en Costa Rica. Entrega a domicilio rápida y segura. Calidad garantizada en cada botella.',
+  keywords: ['licorera', 'licores costa rica', 'vinos', 'cervezas artesanales', 'whisky premium', 'ron', 'entrega licores', 'licorera online'],
+  authors: [{ name: 'Licorera Otro Zarpe' }],
+  creator: 'Licorera Otro Zarpe',
+  openGraph: {
+    type: 'website',
+    locale: 'es_CR',
+    url: 'https://licorera-otro-zarpe.web.app',
+    siteName: 'Licorera Otro Zarpe',
+    title: 'Licorera Otro Zarpe | Tu Licorera Premium',
+    description: 'La mejor selección de licores con entrega a domicilio.',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Licorera Otro Zarpe',
+      },
+    ],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

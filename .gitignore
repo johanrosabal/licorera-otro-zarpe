@@ -17,3 +17,7 @@ Thumbs.db
 
 # Env
 .env*.local
+
+# Secrets
+firebase-admin-key.json
+admin_secret.json

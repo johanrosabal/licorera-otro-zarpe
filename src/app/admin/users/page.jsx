@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getUsers, updateUserProfile } from '@/lib/users-service';
-import { Loader2, MoreHorizontal, Search, Check, Shield, User, Truck, Edit } from 'lucide-react';
+import { Loader2, MoreHorizontal, Search, Check, Shield, User, Truck, Edit, Trash2 } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
 import { Input } from '@/components/ui/input';
 import {
@@ -30,8 +30,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from "@/components/ui/alert-dialog";
 
 const ROLES = ['ADMIN', 'DELIVERY', 'CLIENT'];
 
@@ -144,6 +154,9 @@ export default function AdminUsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   
   useEffect(() => {
@@ -187,6 +200,36 @@ export default function AdminUsersPage() {
     } catch(err) {
         toast({ title: 'Error', description: 'No se pudo actualizar el rol.', variant: 'destructive' });
         console.error(err);
+    }
+  }
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
+    try {
+        // 1. Attempt to delete from Auth via API
+        const response = await fetch('/api/admin/delete-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: userToDelete.id })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || "Error al eliminar de Authentication.");
+        }
+        
+        // 2. Delete from Firestore (should be handled by API too, but let's be sure)
+        await deleteDoc(doc(db, 'users', userToDelete.id));
+        
+        toast({ title: 'Usuario eliminado', description: 'El usuario y su cuenta de acceso han sido eliminados.' });
+    } catch (err) {
+        toast({ title: 'Error', description: err.message, variant: 'destructive' });
+        console.error(err);
+    } finally {
+        setIsDeleting(false);
+        setIsDeleteDialogOpen(false);
+        setUserToDelete(null);
     }
   }
 
@@ -298,6 +341,16 @@ export default function AdminUsersPage() {
                                     </DropdownMenuSubContent>
                                 </DropdownMenuPortal>
                             </DropdownMenuSub>
+                            <DropdownMenuItem 
+                                className="text-destructive focus:text-destructive focus:bg-destructive/10" 
+                                onClick={() => {
+                                    setUserToDelete(user);
+                                    setIsDeleteDialogOpen(true);
+                                }}
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Eliminar Usuario</span>
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -360,6 +413,16 @@ export default function AdminUsersPage() {
                                     </DropdownMenuSubContent>
                                 </DropdownMenuPortal>
                             </DropdownMenuSub>
+                            <DropdownMenuItem 
+                                className="text-destructive focus:text-destructive focus:bg-destructive/10" 
+                                onClick={() => {
+                                    setUserToDelete(user);
+                                    setIsDeleteDialogOpen(true);
+                                }}
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Eliminar Usuario</span>
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
@@ -379,6 +442,32 @@ export default function AdminUsersPage() {
             </div>
           </CardContent>
         </Card>
+
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>¿Estás completamente seguro?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Esta acción eliminará permanentemente la cuenta de <strong>{userToDelete?.name || userToDelete?.email}</strong>. 
+                        Se borrará tanto su perfil como su acceso al sistema (Email Authentication). Esta acción no se puede deshacer.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction 
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handleDeleteUser();
+                        }} 
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={isDeleting}
+                    >
+                        {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Eliminar permanentemente
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     </AuthorizedOnly>
   );
 }

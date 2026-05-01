@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Eye, EyeOff, MapPin } from 'lucide-react'
+import { Loader2, Eye, EyeOff, MapPin, Shield } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 
 export default function SignupPage() {
@@ -27,7 +28,11 @@ export default function SignupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [adminSecret, setAdminSecret] = useState('')
+  const [showAdminSecret, setShowAdminSecret] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isAdminMode = searchParams.get('mode') === 'admin'
   const { toast } = useToast()
 
   const handleGPS = () => {
@@ -61,6 +66,22 @@ export default function SignupPage() {
     }
     setLoading(true)
     try {
+      let role = 'CLIENT'
+      
+      // If in admin mode, verify the secret
+      if (isAdminMode) {
+        const response = await fetch('/api/admin-setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: adminSecret })
+        });
+        
+        if (!response.ok) {
+          throw new Error("Clave de administrador inválida.");
+        }
+        role = 'ADMIN'
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       const user = userCredential.user
       await updateProfile(user, { displayName: name });
@@ -70,10 +91,10 @@ export default function SignupPage() {
         email: user.email,
         whatsapp: whatsapp || '',
         locationUrl: locationUrl || '',
-        role: 'CLIENT',
+        role,
         createdAt: serverTimestamp(),
       })
-      toast({ title: '¡Bienvenido!', description: 'Tu cuenta ha sido creada.' })
+      toast({ title: '¡Bienvenido!', description: isAdminMode ? 'Cuenta de ADMINISTRADOR creada con éxito.' : 'Tu cuenta ha sido creada.' })
       router.push('/')
     } catch (error) {
       toast({ title: 'Error de registro', description: error.message, variant: 'destructive' })
@@ -136,8 +157,21 @@ export default function SignupPage() {
     <div className="container mx-auto px-4 py-12 flex items-center justify-center">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-headline">Crear Cuenta</CardTitle>
-          <CardDescription>Únete para disfrutar de beneficios exclusivos</CardDescription>
+          <div className="flex flex-col items-center gap-2">
+            {isAdminMode && (
+              <Badge variant="destructive" className="animate-bounce uppercase tracking-widest font-bold px-4 py-1">
+                Modo Administrador
+              </Badge>
+            )}
+            <CardTitle className="text-3xl font-headline">
+              {isAdminMode ? 'Configurar Administrador' : 'Crear Cuenta'}
+            </CardTitle>
+          </div>
+          <CardDescription>
+            {isAdminMode 
+              ? 'Introduce la clave maestra para obtener acceso total al panel.' 
+              : 'Únete para disfrutar de beneficios exclusivos'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <form onSubmit={handleSignup} className="space-y-4">
@@ -174,8 +208,36 @@ export default function SignupPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm-password">Confirmar Contraseña</Label>
-              <Input id="confirm-password" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+              <div className="relative">
+                <Input id="confirm-password" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-full px-3" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
+
+            {isAdminMode && (
+              <div className="space-y-2 p-4 bg-destructive/10 border border-destructive/20 rounded-lg animate-pulse">
+                <Label htmlFor="admin-secret" className="text-destructive font-bold flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  CLAVE DE ADMINISTRADOR
+                </Label>
+                <div className="relative">
+                  <Input 
+                    id="admin-secret" 
+                    type={showAdminSecret ? 'text' : 'password'} 
+                    placeholder="Introduce la clave secreta" 
+                    value={adminSecret} 
+                    onChange={(e) => setAdminSecret(e.target.value)} 
+                    required 
+                    className="border-destructive/50 focus-visible:ring-destructive pr-10"
+                  />
+                  <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-full px-3 text-destructive hover:text-destructive/80 hover:bg-destructive/10" onClick={() => setShowAdminSecret(!showAdminSecret)}>
+                    {showAdminSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={loading || googleLoading}>
               {loading && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
               Registrarse
