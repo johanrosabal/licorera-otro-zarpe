@@ -1,8 +1,9 @@
 export const firebaseConfig = {
-  "projectId": "licorera-otro-zarpe",
-  "appId": "1:860274551609:web:dce0c9f47a696ca04356e8",
-  "apiKey": "AIzaSyArH47MXesWIOs5Y0JBRcndpRuCytl0Nz4",
-  "authDomain": "licorera-otro-zarpe.firebaseapp.com",
-  "measurementId": "",
-  "messagingSenderId": "860274551609"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };

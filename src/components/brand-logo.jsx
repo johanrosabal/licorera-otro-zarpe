@@ -1,7 +1,12 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-export const BrandLogo = ({ siteName = 'LOS TIOS', siteSlogan = 'LICORERA EXCLUSIVA', isMobile = false, isSplash = false }) => {
+export const BrandLogo = ({ 
+    siteName = (process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'), 
+    siteSlogan = (process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'), 
+    isMobile = false, 
+    isSplash = false 
+}) => {
     const parts = siteName.split(' ');
     
     return (

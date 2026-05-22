@@ -9,28 +9,32 @@ import { FavoritesProvider } from '@/hooks/use-favorites'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NotificationBanner } from '@/components/layout/notification-banner'
 
+const siteName = process.env.NEXT_PUBLIC_APP_NAME || 'LICORERA';
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'licorera-otro-zarpe'}.web.app`;
+
 export const metadata = {
+  metadataBase: new URL(baseUrl),
   title: {
-    default: 'Licorera Los Tios | Licores Premium y Selección Exclusiva',
-    template: '%s | Licorera Los Tios'
+    default: `${siteName} | Licores Premium y Selección Exclusiva`,
+    template: `%s | ${siteName}`
   },
   description: 'Descubre la mejor selección de licores premium, vinos y cervezas en Costa Rica. Entrega a domicilio rápida y segura. Calidad garantizada en cada botella.',
   keywords: ['licorera', 'licores costa rica', 'vinos', 'cervezas artesanales', 'whisky premium', 'ron', 'entrega licores', 'licorera online'],
-  authors: [{ name: 'Licorera Los Tios' }],
-  creator: 'Licorera Los Tios',
+  authors: [{ name: siteName }],
+  creator: siteName,
   openGraph: {
     type: 'website',
     locale: 'es_CR',
-    url: 'https://licorera-los-tios.web.app',
-    siteName: 'Licorera Los Tios',
-    title: 'Licorera Los Tios | Tu Licorera Premium',
+    url: baseUrl,
+    siteName: siteName,
+    title: `${siteName} | Tu Licorera Premium`,
     description: 'La mejor selección de licores con entrega a domicilio.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Licorera Los Tios',
+        alt: siteName,
       },
     ],
   },

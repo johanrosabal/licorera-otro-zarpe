@@ -8,34 +8,46 @@ const initializeAdmin = () => {
   try {
     // 1. Check for environment variable (highest priority)
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-      return admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+        return admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+      } catch (parseError) {
+        console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY env var:', parseError);
+        console.error('Length of env var:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.length);
+      }
     }
 
     // 2. Check for local file
     const keyPath = path.join(process.cwd(), 'firebase-admin-key.json');
     if (fs.existsSync(keyPath)) {
-      const fileContent = fs.readFileSync(keyPath, 'utf8');
-      const serviceAccount = JSON.parse(fileContent);
-      return admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
+      try {
+        const fileContent = fs.readFileSync(keyPath, 'utf8');
+        if (fileContent.trim() !== '') {
+          const serviceAccount = JSON.parse(fileContent);
+          return admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+          });
+        } else {
+          console.warn('firebase-admin-key.json file is empty.');
+        }
+      } catch (parseError) {
+        console.error('Failed to parse firebase-admin-key.json file:', parseError);
+      }
     }
 
-    // 3. Fallback to ADC
-    console.warn('Firebase Admin: No credentials found, falling back to Application Default Credentials.');
+    // 3. Fallback to Project ID from Env
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    console.warn(`Firebase Admin: No credentials found, falling back to project: ${projectId || 'default'}`);
+    
     return admin.initializeApp({
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'licorera-otro-zarpe',
+      projectId: projectId,
     });
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);
-    // Last resort fallback to avoid app crash
     if (admin.apps.length === 0) {
-        return admin.initializeApp({
-            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'licorera-otro-zarpe',
-        });
+        return admin.initializeApp();
     }
   }
 };

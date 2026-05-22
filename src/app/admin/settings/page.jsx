@@ -44,8 +44,8 @@ export default function AdminSettingsPage() {
       whatsappNumber: '',
       deliveriesEnabled: true,
       storeLocationUrl: '',
-      siteName: 'OTRO ZARPE',
-      siteSlogan: 'PREMIUM SELECTION',
+      siteName: (process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'),
+      siteSlogan: (process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'),
     },
   });
 
@@ -68,8 +68,8 @@ export default function AdminSettingsPage() {
                 whatsappNumber: whatsappNumber || '',
                 deliveriesEnabled: settings.deliveriesEnabled !== undefined ? settings.deliveriesEnabled : true,
                 storeLocationUrl: settings.storeLocationUrl || '',
-                siteName: settings.siteName || 'OTRO ZARPE',
-                siteSlogan: settings.siteSlogan || 'PREMIUM SELECTION',
+                siteName: settings.siteName || (process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'),
+                siteSlogan: settings.siteSlogan || (process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'),
             });
         }
         setLoading(false);
@@ -154,7 +154,7 @@ export default function AdminSettingsPage() {
                                     <FormLabel className="font-bold">Nombre del Sitio (Logo)</FormLabel>
                                     <FormControl>
                                         <Input 
-                                            placeholder="Ej: OTRO ZARPE" 
+                                            placeholder={`Ej: ${process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'}`} 
                                             {...field} 
                                             className="text-2xl font-black h-14 border-2 focus-visible:ring-primary bg-background"
                                         />
@@ -171,7 +171,7 @@ export default function AdminSettingsPage() {
                                     <FormLabel className="font-bold">Eslogan (Texto de abajo)</FormLabel>
                                     <FormControl>
                                         <Input 
-                                            placeholder="Ej: PREMIUM SELECTION" 
+                                            placeholder={`Ej: ${process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'}`} 
                                             {...field} 
                                             className="font-bold tracking-widest uppercase border-2 focus-visible:ring-primary bg-background"
                                         />

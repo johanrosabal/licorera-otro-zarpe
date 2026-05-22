@@ -32,8 +32,8 @@ function WhatsAppIcon(props) {
 export function Footer() {
   const currentYear = new Date().getFullYear()
   const [socials, setSocials] = useState({ facebookUrl: '', instagramUrl: '', twitterUrl: '', whatsappUrl: '' });
-  const [siteName, setSiteName] = useState('LOS TIOS');
-  const [siteSlogan, setSiteSlogan] = useState('LICORERA EXCLUSIVA');
+  const [siteName, setSiteName] = useState(process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA');
+  const [siteSlogan, setSiteSlogan] = useState(process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA');
 
   useEffect(() => {
     const settingsRef = doc(db, 'settings', 'homepage');
@@ -46,8 +46,8 @@ export function Footer() {
                 twitterUrl: data.twitterUrl || '',
                 whatsappUrl: data.whatsappUrl || '',
             });
-            setSiteName(data.siteName ?? 'OTRO ZARPE');
-            setSiteSlogan(data.siteSlogan ?? 'PREMIUM SELECTION');
+            setSiteName(data.siteName ?? (process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'));
+            setSiteSlogan(data.siteSlogan ?? (process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'));
         }
     });
 
@@ -95,7 +95,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          <p>&copy; {currentYear} Licorera Los Tios. Todos los derechos reservados.</p>
+          <p>&copy; {currentYear} {siteName}. Todos los derechos reservados.</p>
           <p className="mt-1">El consumo de alcohol es perjudicial para la salud. Prohibida la venta a menores de 18 años.</p>
         </div>
       </div>

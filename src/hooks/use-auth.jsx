@@ -23,9 +23,17 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [siteName, setSiteName] = useState('LOS TIOS');
-  const [siteSlogan, setSiteSlogan] = useState('LICORERA EXCLUSIVA');
+  const [siteName, setSiteName] = useState(process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA');
+  const [siteSlogan, setSiteSlogan] = useState(process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA');
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinTimeElapsed(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     // Wait for all assets (including images) to load
@@ -106,8 +114,8 @@ export const AuthProvider = ({ children }) => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'homepage'), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        setSiteName(data.siteName ?? 'LOS TIOS');
-        setSiteSlogan(data.siteSlogan ?? 'LICORERA EXCLUSIVA');
+        setSiteName(data.siteName ?? (process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA'));
+        setSiteSlogan(data.siteSlogan ?? (process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA'));
       }
     });
 
@@ -122,7 +130,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {loading || !imagesLoaded ? (
+      {loading || !imagesLoaded || !minTimeElapsed ? (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background">
             <div className="animate-blur-in flex flex-col items-center w-full max-w-md px-8">
                 <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isSplash />

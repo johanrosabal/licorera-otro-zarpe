@@ -107,6 +107,6 @@
 
 @layer utilities {
   .animate-blur-in {
-    animation: blur-in 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    animation: blur-in 2.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
   }
 }

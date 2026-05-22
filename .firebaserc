@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "licorera-otro-zarpe"
+    "tios": "licorera-los-tios",
+    "zarpe": "licorera-otro-zarpe"
   }
 }

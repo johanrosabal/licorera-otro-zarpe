@@ -1,7 +1,7 @@
 import { getProducts } from '@/lib/products-service';
 
 export default async function sitemap() {
-  const baseUrl = 'https://licorera-otro-zarpe.web.app';
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.web.app`;
 
   // Base routes
   const routes = [
