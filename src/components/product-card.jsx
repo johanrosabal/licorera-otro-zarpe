@@ -3,6 +3,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
@@ -19,6 +20,7 @@ export function ProductCard({ product, onProductClick, priority = false }) {
   const { addToCart } = useCart();
   const { toast } = useToast();
   const { toggleFavorite, isFavorite } = useFavorites();
+  const router = useRouter();
 
   const handleAddToCart = (e) => {
     e.preventDefault();
@@ -34,12 +36,30 @@ export function ProductCard({ product, onProductClick, priority = false }) {
     e.preventDefault();
     e.stopPropagation();
     toggleFavorite(product);
-  }
+  };
+
+  const handleMembershipClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    router.push('/signup');
+  };
+
+  const handleCardClick = (e) => {
+    if (!user) {
+      e.preventDefault();
+      e.stopPropagation();
+      router.push('/signup');
+      return;
+    }
+    if (onProductClick) {
+      onProductClick(e);
+    }
+  };
 
   const CardContentWrapper = onProductClick ? 'div' : Link;
   const props = onProductClick 
-    ? { onClick: onProductClick, className: "block group" } 
-    : { href: `/products/${product.id}`, className: "block group" };
+    ? { onClick: handleCardClick, className: "block group" } 
+    : { href: user ? `/products/${product.id}` : '/signup', className: "block group" };
 
   const isProductFavorite = isFavorite(product.id);
 
@@ -97,8 +117,8 @@ export function ProductCard({ product, onProductClick, priority = false }) {
                         {product.stock === 0 ? 'Agotado' : 'Agregar al Carrito'}
                     </Button>
                     ) : (
-                    <Button asChild className="w-full">
-                        <Link href="/signup">Hazte Miembro</Link>
+                    <Button className="w-full font-semibold" onClick={handleMembershipClick}>
+                        Hazte Miembro
                     </Button>
                     )}
                 </div>

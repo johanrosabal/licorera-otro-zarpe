@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getSuppliers } from '@/lib/suppliers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, PlusCircle, FileText, MoreHorizontal, Edit, Trash2, Search, FilterX, Calendar as CalendarIcon, Eye, Image as ImageIcon } from 'lucide-react';
+import { Loader2, PlusCircle, FileText, MoreHorizontal, Edit, Trash2, Search, FilterX, Calendar as CalendarIcon, Eye, Image as ImageIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -222,6 +222,44 @@ export default function PurchasesListPage() {
     })
   }, [purchasesWithProductNames, selectedSupplier, invoiceSearchTerm, selectedUser, dateRange]);
 
+  const [sortConfig, setSortConfig] = useState({ key: 'invoiceDate', direction: 'desc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedPurchases = useMemo(() => {
+    if (!sortConfig.key) return filteredPurchases;
+    return [...filteredPurchases].sort((a, b) => {
+      let valA, valB;
+      if (sortConfig.key === 'supplier') {
+        valA = (suppliers[a.supplierId]?.name || '').toLowerCase();
+        valB = (suppliers[b.supplierId]?.name || '').toLowerCase();
+      } else if (sortConfig.key === 'invoiceNumber') {
+        valA = (a.invoiceNumber || '').toLowerCase();
+        valB = (b.invoiceNumber || '').toLowerCase();
+      } else if (sortConfig.key === 'invoiceDate') {
+        valA = a.invoiceDate?.toDate ? a.invoiceDate.toDate().getTime() : 0;
+        valB = b.invoiceDate?.toDate ? b.invoiceDate.toDate().getTime() : 0;
+      } else if (sortConfig.key === 'createdBy') {
+        valA = (a.createdBy?.email || '').toLowerCase();
+        valB = (b.createdBy?.email || '').toLowerCase();
+      } else if (sortConfig.key === 'totalAmount') {
+        valA = Number(a.totalAmount) || 0;
+        valB = Number(b.totalAmount) || 0;
+      } else {
+        valA = a[sortConfig.key] ?? '';
+        valB = b[sortConfig.key] ?? '';
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredPurchases, sortConfig, suppliers]);
 
   const totalPurchasesAmount = useMemo(() => {
     return filteredPurchases.reduce((total, purchase) => total + purchase.totalAmount, 0);
@@ -377,12 +415,72 @@ export default function PurchasesListPage() {
           <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>N° Factura</TableHead>
-                <TableHead>Fecha Factura</TableHead>
-                <TableHead>Registrado por</TableHead>
-                <TableHead className="text-right">Monto Total</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                <TableHead 
+                  className="cursor-pointer select-none hover:text-primary transition-colors"
+                  onClick={() => handleSort('supplier')}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span>Proveedor</span>
+                    {sortConfig.key === 'supplier' ? (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="cursor-pointer select-none hover:text-primary transition-colors"
+                  onClick={() => handleSort('invoiceNumber')}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span>N° Factura</span>
+                    {sortConfig.key === 'invoiceNumber' ? (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="cursor-pointer select-none hover:text-primary transition-colors"
+                  onClick={() => handleSort('invoiceDate')}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span>Fecha Factura</span>
+                    {sortConfig.key === 'invoiceDate' ? (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="cursor-pointer select-none hover:text-primary transition-colors"
+                  onClick={() => handleSort('createdBy')}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span>Registrado por</span>
+                    {sortConfig.key === 'createdBy' ? (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="text-right cursor-pointer select-none hover:text-primary transition-colors"
+                  onClick={() => handleSort('totalAmount')}
+                >
+                  <div className="flex items-center justify-end gap-1.5 font-bold">
+                    <span>Monto Total</span>
+                    {sortConfig.key === 'totalAmount' ? (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead className="text-right font-bold">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -393,8 +491,8 @@ export default function PurchasesListPage() {
                     <p className="mt-2 text-muted-foreground">Cargando historial...</p>
                   </TableCell>
                 </TableRow>
-              ) : filteredPurchases.length > 0 ? (
-                filteredPurchases.map((purchase) => {
+              ) : sortedPurchases.length > 0 ? (
+                sortedPurchases.map((purchase) => {
                   return (
                     <TableRow key={purchase.id}>
                       <TableCell className="font-medium">{suppliers[purchase.supplierId]?.name || 'Proveedor no encontrado'}</TableCell>
@@ -458,8 +556,8 @@ export default function PurchasesListPage() {
                 <div className="flex justify-center items-center h-48">
                     <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                 </div>
-            ) : filteredPurchases.length > 0 ? (
-                filteredPurchases.map((purchase) => (
+            ) : sortedPurchases.length > 0 ? (
+                sortedPurchases.map((purchase) => (
                     <Card key={purchase.id}>
                         <CardHeader className="p-4">
                             <div className="flex justify-between items-start">

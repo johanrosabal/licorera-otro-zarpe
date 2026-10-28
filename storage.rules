@@ -8,11 +8,15 @@ service firebase.storage {
     }
     
     function getUserRole() {
-      return firebase.firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
     }
-    
+
     function isAdmin() {
       return isSignedIn() && getUserRole() == 'ADMIN';
+    }
+
+    function isRepartidor() {
+      return isSignedIn() && (getUserRole() == 'REPARTIDOR' || getUserRole() == 'DELIVERY');
     }
 
     // Product images: public read, admin write
@@ -24,6 +28,12 @@ service firebase.storage {
     // Invoice images: admin only (for privacy)
     match /invoices/{allPaths=**} {
       allow read, write: if isAdmin();
+    }
+
+    // Payment receipts: authenticated users can upload and read (needed for getDownloadURL during checkout); admins & delivery can read
+    match /paymentReceipts/{allPaths=**} {
+      allow create, read: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
     // Brand/Category icons: public read, admin write

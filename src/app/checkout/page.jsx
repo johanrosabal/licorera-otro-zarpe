@@ -26,7 +26,8 @@ import {
     Tag, 
     AlertTriangle, 
     Map, 
-    Info 
+    Info,
+    MessageCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -40,6 +41,8 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import dynamic from 'next/dynamic';
 
 // Dynamically import map component for SSR compatibility
@@ -66,9 +69,14 @@ export default function CheckoutPage() {
     const [isLocating, setIsLocating] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
     const [deliveryFee, setDeliveryFee] = useState(null);
+    const [deliveryFeeType, setDeliveryFeeType] = useState('distance');
     const [distance, setDistance] = useState(null);
     const [orderPlaced, setOrderPlaced] = useState(false);
     const [completedOrderNumber, setCompletedOrderNumber] = useState(null);
+    const [completedOrderTotal, setCompletedOrderTotal] = useState(0);
+    const [whatsappUrl, setWhatsappUrl] = useState('');
+    const [stockErrors, setStockErrors] = useState([]);
+    const [checkingStock, setCheckingStock] = useState(false);
     const [deliveriesEnabled, setDeliveriesEnabled] = useState(true);
     const [referenceCopied, setReferenceCopied] = useState(false);
     const [ibanCopied, setIbanCopied] = useState(false);
@@ -85,11 +93,78 @@ export default function CheckoutPage() {
             if (!user) {
                 router.replace('/login?redirect=/checkout');
             } else if (cartItems.length === 0) {
+                // If there's a guest cart currently being merged from localStorage, do not redirect
+                const storedCart = typeof window !== 'undefined' ? localStorage.getItem('cart') : null;
+                if (storedCart) {
+                    try {
+                        const parsed = JSON.parse(storedCart);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            return;
+                        }
+                    } catch (e) {}
+                }
                 toast({ title: "Tu carrito está vacío" });
                 router.replace('/products');
             }
         }
     }, [user, authLoading, cartItems.length, router, toast, isCartInitialized, orderPlaced]);
+
+    // Live stock verification for cart items
+    useEffect(() => {
+        if (!cartItems || cartItems.length === 0) {
+            setStockErrors([]);
+            return;
+        }
+
+        let isCancelled = false;
+        async function validateCartStock() {
+            setCheckingStock(true);
+            try {
+                const errors = [];
+                for (const item of cartItems) {
+                    const productSnap = await getDoc(doc(db, 'products', item.id));
+                    if (!productSnap.exists()) {
+                        errors.push({ id: item.id, message: `"${item.name}" ya no existe en el catálogo.` });
+                    } else {
+                        const productData = productSnap.data();
+                        if (productData.isBundle && productData.bundleItems && productData.bundleItems.length > 0) {
+                            for (const bundleComponent of productData.bundleItems) {
+                                const compSnap = await getDoc(doc(db, 'products', bundleComponent.productId));
+                                if (!compSnap.exists()) {
+                                    errors.push({ id: item.id, message: `Un artículo del combo "${item.name}" ya no existe.` });
+                                    break;
+                                }
+                                const compData = compSnap.data();
+                                const compStock = Number(compData.stock) || 0;
+                                const required = (Number(bundleComponent.quantity) || 1) * (Number(item.quantity) || 1);
+                                if (compStock < required) {
+                                    errors.push({ id: item.id, message: `"${item.name}": falta stock de "${compData.name}". Disponible: ${compStock}, Requerido: ${required}.` });
+                                    break;
+                                }
+                            }
+                        } else {
+                            const currentStock = Number(productData.stock) || 0;
+                            if (currentStock <= 0) {
+                                errors.push({ id: item.id, message: `"${item.name}" está agotado (0 disponibles).` });
+                            } else if (currentStock < item.quantity) {
+                                errors.push({ id: item.id, message: `"${item.name}": solo quedan ${currentStock} unidades disponibles (tienes ${item.quantity} en el carrito).` });
+                            }
+                        }
+                    }
+                }
+                if (!isCancelled) {
+                    setStockErrors(errors);
+                }
+            } catch (err) {
+                console.error("Error validating cart stock:", err);
+            } finally {
+                if (!isCancelled) setCheckingStock(false);
+            }
+        }
+
+        validateCartStock();
+        return () => { isCancelled = true; };
+    }, [cartItems]);
 
     useEffect(() => {
         async function fetchInitialData() {
@@ -104,8 +179,16 @@ export default function CheckoutPage() {
                     setPaymentMethods(methods);
                     if (methods.length > 0) setSelectedPaymentMethodId(methods[0].id);
 
+                    if (settings?.whatsappUrl) {
+                        setWhatsappUrl(settings.whatsappUrl);
+                    }
+
                     const isDeliveryOn = settings?.deliveriesEnabled !== false;
                     setDeliveriesEnabled(isDeliveryOn);
+
+                    const feeType = settings?.deliveryFeeType || 'distance';
+                    const fixedAmount = Number(settings?.fixedDeliveryFee ?? 3000);
+                    setDeliveryFeeType(feeType);
 
                     const userCoords = extractCoordsFromUrl(currentUser?.locationUrl);
                     const storeCoords = settings?.deliveryOriginLat && settings?.deliveryOriginLng ? { lat: settings.deliveryOriginLat, lng: settings.deliveryOriginLng } : null;
@@ -113,14 +196,17 @@ export default function CheckoutPage() {
                     if (!isDeliveryOn) {
                         setDeliveryFee(0);
                         setDistance(null);
+                    } else if (feeType === 'fixed') {
+                        setDeliveryFee(fixedAmount);
+                        setDistance(null);
                     } else {
                         if(userCoords && storeCoords) {
                             const calculatedDistance = calculateHaversineDistance(storeCoords.lat, storeCoords.lng, userCoords.lat, userCoords.lng);
                             setDistance(calculatedDistance);
                             const applicableFee = fees.find(fee => calculatedDistance >= fee.fromKm && calculatedDistance < fee.toKm);
-                            setDeliveryFee(applicableFee ? applicableFee.fee : 3000);
+                            setDeliveryFee(applicableFee ? applicableFee.fee : fixedAmount);
                         } else {
-                            setDeliveryFee(3000);
+                            setDeliveryFee(fixedAmount);
                             setDistance(null);
                         }
                     }
@@ -195,29 +281,50 @@ export default function CheckoutPage() {
             toast({ title: "Selecciona un método de pago", variant: "destructive" });
             return;
         }
+
+        if (!paymentReceipt) {
+            toast({
+                title: "Comprobante de pago obligatorio",
+                description: "Por favor sube la foto o captura de pantalla de tu comprobante de pago para procesar la orden.",
+                variant: "destructive"
+            });
+            const receiptEl = document.getElementById('receipt-upload-container');
+            if (receiptEl) {
+                receiptEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return;
+        }
+
+        if (stockErrors.length > 0) {
+            toast({
+                title: "Inventario insuficiente",
+                description: "Por favor revisa y ajusta los productos con falta de stock en el resumen antes de continuar.",
+                variant: "destructive"
+            });
+            return;
+        }
+
         setIsProcessing(true);
         try {
             const selectedMethod = paymentMethods.find(m => m.id === selectedPaymentMethodId);
+            const orderTotal = subtotal + (deliveryFee || 0);
             const result = await createOrder({
                 userId: user.uid,
-                userName: user.name || user.email,
-                userEmail: user.email,
+                userName: user.name || user.email || 'Cliente',
+                userEmail: user.email || '',
                 items: cartItems,
                 subtotal: subtotal,
                 deliveryFee: deliveryFee || 0,
-                total: subtotal + (deliveryFee || 0),
+                total: orderTotal,
                 paymentMethod: selectedMethod,
                 paymentReceipt,
                 paymentReference, 
             });
             
             setCompletedOrderNumber(result.invoiceNumber);
+            setCompletedOrderTotal(orderTotal);
             setOrderPlaced(true);
             await clearCart();
-            
-            setTimeout(() => {
-                router.push('/my-orders');
-            }, 3000);
 
         } catch (error) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -230,29 +337,52 @@ export default function CheckoutPage() {
     }
 
     if (orderPlaced) {
+        const orderTotal = completedOrderTotal || (subtotal + (deliveryFee || 0));
+        const formattedTotal = formatCurrency(orderTotal);
+        const waMessage = encodeURIComponent(`Hola, acabo de realizar la orden #${completedOrderNumber} por un total de ${formattedTotal}. Adjunto mi comprobante de pago.`);
+        const waLink = whatsappUrl 
+            ? `${whatsappUrl.split('?')[0].replace(/\/+$/, '')}?text=${waMessage}`
+            : `https://wa.me/?text=${waMessage}`;
+
         return (
-            <div className="container mx-auto py-20 px-4 flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-500">
+            <div className="container mx-auto py-16 px-4 flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-500">
                 <Card className="max-w-md w-full text-center shadow-2xl border-primary/20">
-                    <CardHeader>
-                        <div className="mx-auto bg-green-100 dark:bg-green-900/30 rounded-full p-4 w-fit mb-4">
-                            <CheckCircle2 className="h-16 w-16 text-green-600 dark:text-green-400" />
+                    <CardHeader className="pb-4">
+                        <div className="mx-auto bg-green-100 dark:bg-green-900/30 rounded-full p-4 w-fit mb-3">
+                            <CheckCircle2 className="h-14 w-14 text-green-600 dark:text-green-400" />
                         </div>
                         <CardTitle className="text-3xl font-headline">¡Pedido Realizado!</CardTitle>
-                        <CardDescription className="text-lg">Tu orden ha sido procesada con éxito.</CardDescription>
+                        <CardDescription className="text-base">Tu orden ha sido registrada exitosamente.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        <div className="bg-muted p-6 rounded-xl border-2 border-dashed border-primary/30">
-                            <p className="text-sm text-muted-foreground uppercase tracking-wider font-bold mb-1">Número de Orden</p>
-                            <p className="text-5xl font-black text-primary">#{completedOrderNumber}</p>
+                        <div className="bg-muted/60 p-5 rounded-xl border-2 border-dashed border-primary/30">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-1">Número de Orden</p>
+                            <p className="text-4xl font-black text-primary">#{completedOrderNumber}</p>
+                            <p className="text-sm font-semibold text-muted-foreground mt-2">
+                                Total: <span className="text-foreground font-black text-base">{formattedTotal}</span>
+                            </p>
                         </div>
-                        <p className="text-muted-foreground">
-                            Redirigiendo a tu historial de órdenes...
-                        </p>
+
+                        <div className="space-y-3">
+                            <Button 
+                                asChild 
+                                size="lg" 
+                                className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-black h-14 shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2 text-base"
+                            >
+                                <a href={waLink} target="_blank" rel="noopener noreferrer">
+                                    <MessageCircle className="h-5 w-5 fill-current" />
+                                    Enviar Comprobante por WhatsApp
+                                </a>
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                                Envíanos tu comprobante directamente por WhatsApp para agilizar la preparación de tu pedido.
+                            </p>
+                        </div>
                     </CardContent>
-                    <CardFooter>
-                        <Button asChild size="lg" className="w-full font-bold h-12">
+                    <CardFooter className="pt-0">
+                        <Button asChild variant="outline" size="lg" className="w-full font-bold h-12">
                             <Link href="/my-orders">
-                                Ir a Mis Órdenes <ArrowRight className="ml-2 h-5 w-5" />
+                                Ver Mis Órdenes <ArrowRight className="ml-2 h-5 w-5" />
                             </Link>
                         </Button>
                     </CardFooter>
@@ -291,7 +421,9 @@ export default function CheckoutPage() {
                                     <AlertTriangle className="h-5 w-5 text-blue-600" />
                                     <AlertTitle className="font-black text-lg">¡IMPORTANTE!</AlertTitle>
                                     <AlertDescription className="text-base">
-                                        Para garantizar que su pedido llegue correctamente, es **VITAL** que verifique su ubicación exacta en el mapa de abajo. Use el botón de GPS para centrarlo.
+                                        {deliveryFeeType === 'fixed'
+                                            ? 'Para garantizar que su pedido llegue correctamente a su destino, verifique su ubicación en el mapa de abajo. Use el botón de GPS para centrarlo.'
+                                            : 'Para garantizar que su pedido llegue correctamente y calcular su costo de envío, es VITAL que verifique su ubicación exacta en el mapa de abajo. Use el botón de GPS para centrarlo.'}
                                     </AlertDescription>
                                 </Alert>
 
@@ -429,21 +561,72 @@ export default function CheckoutPage() {
                                     </TabsContent>
                                 ))}
                             </Tabs>
-                            <div className="mt-8">
-                                <Label className="text-lg font-bold flex items-center gap-2 mb-2"><Upload className="h-5 w-5 text-primary" /> Subir Comprobante (Opcional)</Label>
-                                <Input type="file" className="hidden" id="receipt-upload" accept="image/*" onChange={(e) => setPaymentReceipt(e.target.files?.[0])} />
-                                <label htmlFor="receipt-upload" className="mt-2 block w-full h-40 border-2 border-dashed border-primary/20 rounded-xl flex items-center justify-center cursor-pointer bg-muted/20 hover:bg-muted/40 hover:border-primary transition-all relative overflow-hidden group">
+                            <div className="mt-8" id="receipt-upload-container">
+                                <div className="flex items-center justify-between mb-2">
+                                    <Label className="text-lg font-bold flex items-center gap-2">
+                                        <Upload className="h-5 w-5 text-primary" /> Subir Comprobante
+                                        <span className="text-destructive font-black text-sm">* Obligatorio</span>
+                                    </Label>
+                                    {paymentReceipt ? (
+                                        <Badge className="bg-green-100 text-green-700 border-green-200 text-xs gap-1 font-bold">
+                                            <CheckCircle2 className="h-3.5 w-3.5" /> Comprobante Listo
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="text-destructive border-destructive/50 bg-destructive/10 text-xs font-bold animate-pulse">
+                                            Obligatorio
+                                        </Badge>
+                                    )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    Adjunta la foto o captura de pantalla de tu comprobante de pago (SINPE Móvil o Transferencia) para validar tu orden.
+                                </p>
+                                <Input 
+                                    type="file" 
+                                    className="hidden" 
+                                    id="receipt-upload" 
+                                    accept="image/*" 
+                                    onChange={(e) => {
+                                        if (e.target.files?.[0]) {
+                                            setPaymentReceipt(e.target.files[0]);
+                                        }
+                                    }} 
+                                />
+                                <label 
+                                    htmlFor="receipt-upload" 
+                                    className={`mt-2 block w-full h-44 border-2 border-dashed rounded-xl flex items-center justify-center cursor-pointer transition-all relative overflow-hidden group ${
+                                        paymentReceipt 
+                                            ? 'border-green-500 bg-green-50/40 dark:bg-green-950/20 shadow-md' 
+                                            : 'border-destructive/40 bg-destructive/5 hover:border-destructive hover:bg-destructive/10'
+                                    }`}
+                                >
                                     {receiptPreview ? (
                                         <>
                                             <Image src={receiptPreview} alt="Comprobante" fill className="object-contain p-2" unoptimized />
-                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                <p className="text-white font-bold">Cambiar imagen</p>
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-4">
+                                                <p className="text-white font-bold text-sm">Clic para cambiar imagen</p>
+                                                <Button 
+                                                    type="button" 
+                                                    variant="destructive" 
+                                                    size="sm" 
+                                                    className="h-8 text-xs font-bold"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setPaymentReceipt(null);
+                                                        setReceiptPreview(null);
+                                                    }}
+                                                >
+                                                    <X className="h-3.5 w-3.5 mr-1" /> Quitar Comprobante
+                                                </Button>
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="text-center text-muted-foreground">
-                                            <Upload className="mx-auto h-10 w-10 mb-2 opacity-50"/>
-                                            <p className="font-medium">Clic para subir comprobante</p>
+                                        <div className="text-center p-4 space-y-1">
+                                            <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-1 group-hover:scale-110 transition-transform">
+                                                <Upload className="h-6 w-6 text-destructive"/>
+                                            </div>
+                                            <p className="font-bold text-foreground">Clic para subir comprobante</p>
+                                            <p className="text-xs text-muted-foreground">Formatos aceptados: JPG, PNG, WEBP</p>
                                         </div>
                                     )}
                                 </label>
@@ -471,7 +654,7 @@ export default function CheckoutPage() {
                            <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="font-medium text-foreground">{formatCurrency(subtotal)}</span></div>
                            {deliveriesEnabled && (
                                <div className="flex justify-between text-muted-foreground">
-                                    <span>Envío {distance ? `(${distance.toFixed(1)} km)` : ''}</span>
+                                    <span>Envío {deliveryFeeType === 'fixed' ? '(Tarifa Fija)' : distance ? `(${distance.toFixed(1)} km)` : ''}</span>
                                     <span className="font-medium text-foreground">{formatCurrency(deliveryFee)}</span>
                                </div>
                            )}
@@ -480,11 +663,57 @@ export default function CheckoutPage() {
                                <span>TOTAL</span>
                                <span>{formatCurrency(subtotal + (deliveryFee || 0))}</span>
                            </div>
+
+                           {!paymentReceipt && (
+                               <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200 py-2.5">
+                                   <Info className="h-4 w-4 text-amber-600 shrink-0" />
+                                   <AlertDescription className="text-xs font-medium">
+                                       Para confirmar tu pedido debes adjuntar el comprobante de pago arriba.
+                                   </AlertDescription>
+                               </Alert>
+                           )}
+
+                           {stockErrors.length > 0 && (
+                               <Alert variant="destructive" className="border-2 border-destructive bg-destructive/10 animate-in fade-in">
+                                   <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                                   <div>
+                                       <AlertTitle className="font-bold text-destructive">Disponibilidad de Inventario</AlertTitle>
+                                       <AlertDescription className="text-xs space-y-1 mt-1 text-destructive font-medium">
+                                           {stockErrors.map(err => (
+                                               <p key={err.id}>• {err.message}</p>
+                                           ))}
+                                           <p className="pt-1 font-bold underline">
+                                               <Link href="/products">Regresar a la tienda para ajustar tu carrito</Link>
+                                           </p>
+                                       </AlertDescription>
+                                   </div>
+                               </Alert>
+                           )}
                         </CardContent>
                         <CardFooter>
-                            <Button className="w-full text-xl font-black h-16 shadow-lg hover:scale-[1.02] transition-all" size="lg" onClick={handleCreateOrder} disabled={isProcessing}>
-                                {isProcessing ? <Loader2 className="animate-spin mr-2 h-6 w-6"/> : <CheckCircle2 className="mr-2 h-6 w-6" />}
-                                CONFIRMAR PEDIDO
+                            <Button 
+                                className="w-full text-xl font-black h-16 shadow-lg hover:scale-[1.02] transition-all" 
+                                size="lg" 
+                                onClick={handleCreateOrder} 
+                                disabled={isProcessing || stockErrors.length > 0 || checkingStock}
+                                variant={stockErrors.length > 0 ? "destructive" : !paymentReceipt ? "outline" : "default"}
+                            >
+                                {isProcessing || checkingStock ? (
+                                    <Loader2 className="animate-spin mr-2 h-6 w-6"/>
+                                ) : stockErrors.length > 0 ? (
+                                    <AlertTriangle className="mr-2 h-6 w-6" />
+                                ) : !paymentReceipt ? (
+                                    <Upload className="mr-2 h-6 w-6 text-primary" />
+                                ) : (
+                                    <CheckCircle2 className="mr-2 h-6 w-6" />
+                                )}
+                                {checkingStock 
+                                    ? "VERIFICANDO STOCK..." 
+                                    : stockErrors.length > 0 
+                                        ? "AJUSTA TU CARRITO" 
+                                        : !paymentReceipt
+                                            ? "SUBE TU COMPROBANTE"
+                                            : "CONFIRMAR PEDIDO"}
                             </Button>
                         </CardFooter>
                     </Card>

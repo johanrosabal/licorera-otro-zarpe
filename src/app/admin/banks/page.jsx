@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getBanks, addBank, updateBank, deleteBank } from '@/lib/banks';
-import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Phone, Mail, User, MapPin, Search, Globe, Landmark } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Phone, Mail, User, MapPin, Search, Globe, Landmark, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -271,6 +271,45 @@ export default function AdminBanksPage() {
     });
   }, [banks, searchTerm]);
 
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedBanks = useMemo(() => {
+    if (!sortConfig.key) return filteredBanks;
+    return [...filteredBanks].sort((a, b) => {
+      let valA, valB;
+      if (sortConfig.key === 'name') {
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+      } else if (sortConfig.key === 'country') {
+        valA = (a.country || '').toLowerCase();
+        valB = (b.country || '').toLowerCase();
+      } else if (sortConfig.key === 'swiftBic') {
+        valA = (a.swiftBic || '').toLowerCase();
+        valB = (b.swiftBic || '').toLowerCase();
+      } else if (sortConfig.key === 'phone') {
+        valA = (a.phone || '').toLowerCase();
+        valB = (b.phone || '').toLowerCase();
+      } else if (sortConfig.key === 'active') {
+        valA = a.active ? 1 : 0;
+        valB = b.active ? 1 : 0;
+      } else {
+        valA = a[sortConfig.key] ?? '';
+        valB = b[sortConfig.key] ?? '';
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredBanks, sortConfig]);
+
   const handleToggleActive = async (bank) => {
     try {
         await updateBank(bank.id, { active: !bank.active });
@@ -354,12 +393,72 @@ export default function AdminBanksPage() {
                 <Table className="hidden md:table">
                 <TableHeader>
                     <TableRow>
-                    <TableHead>Nombre del Banco</TableHead>
-                    <TableHead>País</TableHead>
-                    <TableHead>SWIFT/BIC</TableHead>
-                    <TableHead>Teléfono</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
+                    <TableHead 
+                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                        onClick={() => handleSort('name')}
+                    >
+                        <div className="flex items-center gap-1.5 font-bold">
+                            <span>Nombre del Banco</span>
+                            {sortConfig.key === 'name' ? (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            )}
+                        </div>
+                    </TableHead>
+                    <TableHead 
+                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                        onClick={() => handleSort('country')}
+                    >
+                        <div className="flex items-center gap-1.5 font-bold">
+                            <span>País</span>
+                            {sortConfig.key === 'country' ? (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            )}
+                        </div>
+                    </TableHead>
+                    <TableHead 
+                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                        onClick={() => handleSort('swiftBic')}
+                    >
+                        <div className="flex items-center gap-1.5 font-bold">
+                            <span>SWIFT/BIC</span>
+                            {sortConfig.key === 'swiftBic' ? (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            )}
+                        </div>
+                    </TableHead>
+                    <TableHead 
+                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                        onClick={() => handleSort('phone')}
+                    >
+                        <div className="flex items-center gap-1.5 font-bold">
+                            <span>Teléfono</span>
+                            {sortConfig.key === 'phone' ? (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            )}
+                        </div>
+                    </TableHead>
+                    <TableHead 
+                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                        onClick={() => handleSort('active')}
+                    >
+                        <div className="flex items-center gap-1.5 font-bold">
+                            <span>Estado</span>
+                            {sortConfig.key === 'active' ? (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            )}
+                        </div>
+                    </TableHead>
+                    <TableHead className="text-right font-bold">Acciones</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -369,8 +468,8 @@ export default function AdminBanksPage() {
                         <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                         </TableCell>
                     </TableRow>
-                    ) : filteredBanks.length > 0 ? (
-                    filteredBanks.map((bank) => (
+                    ) : sortedBanks.length > 0 ? (
+                    sortedBanks.map((bank) => (
                         <TableRow key={bank.id}>
                         <TableCell className="font-medium">{bank.name}</TableCell>
                         <TableCell>{bank.country}</TableCell>
@@ -421,8 +520,8 @@ export default function AdminBanksPage() {
                         <div className="text-center h-48 flex justify-center items-center">
                             <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                         </div>
-                    ) : filteredBanks.length > 0 ? (
-                        filteredBanks.map(bank => (
+                    ) : sortedBanks.length > 0 ? (
+                        sortedBanks.map(bank => (
                             <Card key={bank.id}>
                                 <CardHeader>
                                     <div className="flex justify-between items-start">

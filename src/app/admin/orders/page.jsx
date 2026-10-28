@@ -7,7 +7,7 @@ import { updateOrderStatus } from '@/lib/orders-service';
 import { getUsers } from '@/lib/users-service';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, FileText, MoreHorizontal, Eye, CheckCircle, Clock, XCircle, Truck, PackageCheck, Image as ImageIcon, ChevronDown, Search, FilterX, Calendar as CalendarIcon, Hourglass, Phone, UserCheck, Tag } from 'lucide-react';
+import { Loader2, FileText, MoreHorizontal, Eye, CheckCircle, Clock, XCircle, Truck, PackageCheck, Image as ImageIcon, ChevronDown, Search, FilterX, Calendar as CalendarIcon, Hourglass, Phone, UserCheck, Tag, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -219,6 +219,50 @@ function OrderDetailModal({ order, onClose }) {
 }
 
 function OrdersList({ orders, userMap, onOpenDetail, onStatusChange, onViewReceipt }) {
+    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+
+    const handleSort = (key) => {
+        setSortConfig((prev) => {
+            if (prev.key === key) {
+                return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+            }
+            return { key, direction: 'asc' };
+        });
+    };
+
+    const sortedOrders = useMemo(() => {
+        if (!sortConfig.key) return orders;
+        return [...orders].sort((a, b) => {
+            let valA, valB;
+            if (sortConfig.key === 'createdAt') {
+                valA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+                valB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+            } else if (sortConfig.key === 'invoiceNumber') {
+                valA = Number(a.invoiceNumber) || 0;
+                valB = Number(b.invoiceNumber) || 0;
+            } else if (sortConfig.key === 'userName') {
+                valA = (a.userName || '').toLowerCase();
+                valB = (b.userName || '').toLowerCase();
+            } else if (sortConfig.key === 'total') {
+                valA = Number(a.total) || 0;
+                valB = Number(b.total) || 0;
+            } else if (sortConfig.key === 'status') {
+                valA = (a.status || '').toLowerCase();
+                valB = (b.status || '').toLowerCase();
+            } else if (sortConfig.key === 'repartidor') {
+                valA = (userMap.get(a.repartidorAsignadoId) || '').toLowerCase();
+                valB = (userMap.get(b.repartidorAsignadoId) || '').toLowerCase();
+            } else {
+                valA = a[sortConfig.key] ?? '';
+                valB = b[sortConfig.key] ?? '';
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [orders, sortConfig, userMap]);
+
      if (orders.length === 0) {
         return (
              <div className="text-center h-48 flex flex-col justify-center items-center text-muted-foreground">
@@ -246,16 +290,76 @@ function OrdersList({ orders, userMap, onOpenDetail, onStatusChange, onViewRecei
                         <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                             <TableRow className="hover:bg-transparent">
                                 <TableHead className="w-[50px]">#</TableHead>
-                                <TableHead className="w-[180px]">Orden / Fecha</TableHead>
-                                <TableHead className="w-[220px]">Cliente</TableHead>
-                                <TableHead className="w-[150px]">Pago / Ref.</TableHead>
-                                <TableHead className="w-[180px]">Seguimiento</TableHead>
-                                <TableHead className="w-[200px]">Estado</TableHead>
+                                <TableHead 
+                                    className="w-[180px] cursor-pointer select-none hover:text-primary transition-colors"
+                                    onClick={() => handleSort('invoiceNumber')}
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                        <span>Orden / Fecha</span>
+                                        {sortConfig.key === 'invoiceNumber' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[220px] cursor-pointer select-none hover:text-primary transition-colors"
+                                    onClick={() => handleSort('userName')}
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                        <span>Cliente</span>
+                                        {sortConfig.key === 'userName' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[180px] cursor-pointer select-none hover:text-primary transition-colors"
+                                    onClick={() => handleSort('total')}
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                        <span>Pago / Total</span>
+                                        {sortConfig.key === 'total' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[180px] cursor-pointer select-none hover:text-primary transition-colors"
+                                    onClick={() => handleSort('repartidor')}
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                        <span>Seguimiento</span>
+                                        {sortConfig.key === 'repartidor' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[200px] cursor-pointer select-none hover:text-primary transition-colors"
+                                    onClick={() => handleSort('status')}
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                        <span>Estado</span>
+                                        {sortConfig.key === 'status' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                        )}
+                                    </div>
+                                </TableHead>
                                 <TableHead className="text-right">Acciones</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {orders.map((order, index) => (
+                        {sortedOrders.map((order, index) => (
                             <TableRow key={order.id} className="group hover:bg-muted/30 transition-colors">
                                 <TableCell className="text-xs text-muted-foreground font-mono">
                                     {(index + 1).toString().padStart(2, '0')}
@@ -354,7 +458,7 @@ function OrdersList({ orders, userMap, onOpenDetail, onStatusChange, onViewRecei
             
             {/* Mobile/Tablet Card View */}
             <div className="space-y-4 lg:hidden">
-                {orders.map((order) => (
+                {sortedOrders.map((order) => (
                     <Card key={order.id} className="p-4 border-2">
                         <div className="flex justify-between items-start gap-4 mb-4">
                             <div className="flex-1">

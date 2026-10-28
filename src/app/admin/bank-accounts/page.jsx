@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { getBankAccounts, addBankAccount, updateBankAccount, deleteBankAccount } from '@/lib/bank-accounts';
 import { getBanks } from '@/lib/banks';
-import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Search, Wallet, CircleDollarSign, Hash, ShieldCheck, Banknote } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Search, Wallet, CircleDollarSign, Hash, ShieldCheck, Banknote, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -293,6 +293,48 @@ export default function AdminBankAccountsPage() {
     });
   }, [accounts, searchTerm, bankMap]);
 
+  const [sortConfig, setSortConfig] = useState({ key: 'accountHolder', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedAccounts = useMemo(() => {
+    if (!sortConfig.key) return filteredAccounts;
+    return [...filteredAccounts].sort((a, b) => {
+      let valA, valB;
+      if (sortConfig.key === 'bank') {
+        valA = (bankMap[a.bankId] || '').toLowerCase();
+        valB = (bankMap[b.bankId] || '').toLowerCase();
+      } else if (sortConfig.key === 'accountHolder') {
+        valA = (a.accountHolder || '').toLowerCase();
+        valB = (b.accountHolder || '').toLowerCase();
+      } else if (sortConfig.key === 'accountNumber') {
+        valA = (a.accountNumber || '').toLowerCase();
+        valB = (b.accountNumber || '').toLowerCase();
+      } else if (sortConfig.key === 'balance') {
+        valA = Number(a.balance) || 0;
+        valB = Number(b.balance) || 0;
+      } else if (sortConfig.key === 'limit') {
+        valA = Number(a.limit) || 0;
+        valB = Number(b.limit) || 0;
+      } else if (sortConfig.key === 'active') {
+        valA = a.active ? 1 : 0;
+        valB = b.active ? 1 : 0;
+      } else {
+        valA = a[sortConfig.key] ?? '';
+        valB = b[sortConfig.key] ?? '';
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredAccounts, sortConfig, bankMap]);
+
   const handleToggleActive = async (account) => {
     try {
         await updateBankAccount(account.id, { active: !account.active });
@@ -497,13 +539,85 @@ export default function AdminBankAccountsPage() {
                 <Table className="hidden md:table">
                     <TableHeader>
                         <TableRow>
-                        <TableHead>Banco</TableHead>
-                        <TableHead>Titular</TableHead>
-                        <TableHead>Número de Cuenta</TableHead>
-                        <TableHead>Saldo</TableHead>
-                        <TableHead>Límite</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
+                        <TableHead 
+                            className="cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('bank')}
+                        >
+                            <div className="flex items-center gap-1.5 font-bold">
+                                <span>Banco</span>
+                                {sortConfig.key === 'bank' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead 
+                            className="cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('accountHolder')}
+                        >
+                            <div className="flex items-center gap-1.5 font-bold">
+                                <span>Titular</span>
+                                {sortConfig.key === 'accountHolder' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead 
+                            className="cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('accountNumber')}
+                        >
+                            <div className="flex items-center gap-1.5 font-bold">
+                                <span>Número de Cuenta</span>
+                                {sortConfig.key === 'accountNumber' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead 
+                            className="text-right cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('balance')}
+                        >
+                            <div className="flex items-center justify-end gap-1.5 font-bold">
+                                <span>Saldo</span>
+                                {sortConfig.key === 'balance' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead 
+                            className="text-right cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('limit')}
+                        >
+                            <div className="flex items-center justify-end gap-1.5 font-bold">
+                                <span>Límite</span>
+                                {sortConfig.key === 'limit' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead 
+                            className="cursor-pointer select-none hover:text-primary transition-colors"
+                            onClick={() => handleSort('active')}
+                        >
+                            <div className="flex items-center gap-1.5 font-bold">
+                                <span>Estado</span>
+                                {sortConfig.key === 'active' ? (
+                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead className="text-right font-bold">Acciones</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -513,8 +627,8 @@ export default function AdminBankAccountsPage() {
                             <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                             </TableCell>
                         </TableRow>
-                        ) : filteredAccounts.length > 0 ? (
-                        filteredAccounts.map((account) => (
+                        ) : sortedAccounts.length > 0 ? (
+                        sortedAccounts.map((account) => (
                             <TableRow key={account.id}>
                                 <TableCell className="font-medium">{bankMap[account.bankId] || 'N/A'}</TableCell>
                                 <TableCell>{account.accountHolder}</TableCell>
@@ -576,8 +690,8 @@ export default function AdminBankAccountsPage() {
                         <div className="flex justify-center items-center h-48">
                             <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                         </div>
-                    ) : filteredAccounts.length > 0 ? (
-                        filteredAccounts.map(account => (
+                    ) : sortedAccounts.length > 0 ? (
+                        sortedAccounts.map(account => (
                             <Card key={account.id}>
                                 <CardHeader>
                                     <div className="flex justify-between items-start">

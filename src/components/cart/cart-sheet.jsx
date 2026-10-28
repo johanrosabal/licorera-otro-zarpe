@@ -14,10 +14,17 @@ import { Input } from '../ui/input'
 import { Separator } from '../ui/separator'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
+import { useRouter } from 'next/navigation'
 
 export function CartSheet({ open, onOpenChange }) {
     const { cartItems, removeFromCart, updateQuantity, clearCart, subtotal, totalItems } = useCart();
     const { user } = useAuth();
+    const router = useRouter();
+
+    const handleProceedToCheckout = () => {
+        onOpenChange(false);
+        router.push(user ? "/checkout" : "/login?redirect=/checkout");
+    };
     
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -62,11 +69,9 @@ export function CartSheet({ open, onOpenChange }) {
                                     <span>Subtotal</span>
                                     <span>{formatCurrency(subtotal)}</span>
                                 </div>
-                                <Button asChild className="w-full" size="lg" onClick={() => onOpenChange(false)}>
-                                  <Link href={user ? "/checkout" : "/login?redirect=/checkout"}>
+                                <Button className="w-full font-bold" size="lg" onClick={handleProceedToCheckout}>
                                     <CreditCard className="mr-2 h-5 w-5" />
                                     Finalizar Compra
-                                  </Link>
                                 </Button>
                                 <Button className="w-full" variant="outline" onClick={clearCart}>
                                     <Trash2 className="mr-2 h-4 w-4" />

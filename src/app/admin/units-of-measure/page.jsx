@@ -1,7 +1,7 @@
 
 'use client'
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { addUnitOfMeasure, deleteUnitOfMeasure, updateUnitOfMeasure } from '@/lib/unitsOfMeasure';
-import { PlusCircle, Trash2, Loader2, Edit, Scaling } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, Scaling, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,7 +46,30 @@ export default function AdminUnitsOfMeasurePage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
   const { toast } = useToast();
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
   
   useEffect(() => {
     setLoading(true);
@@ -61,6 +85,24 @@ export default function AdminUnitsOfMeasurePage() {
 
     return () => unsubscribe();
   }, [toast]);
+
+  const sortedUnits = useMemo(() => {
+    if (!sortConfig.key) return units;
+
+    return [...units].sort((a, b) => {
+      let comparison = 0;
+      if (sortConfig.key === 'name') {
+        const nameA = (a.name || '').toString().trim();
+        const nameB = (b.name || '').toString().trim();
+        comparison = nameA.localeCompare(nameB, 'es', { sensitivity: 'base', numeric: true });
+      } else if (sortConfig.key === 'active') {
+        const numA = a.active ? 1 : 0;
+        const numB = b.active ? 1 : 0;
+        comparison = numB - numA; // active first by default
+      }
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [units, sortConfig]);
 
 
   const handleAddUnit = async (e) => {
@@ -171,8 +213,32 @@ export default function AdminUnitsOfMeasurePage() {
                     <Table>
                     <TableHeader>
                         <TableRow>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead>Estado</TableHead>
+                        <TableHead 
+                          className={cn(
+                            "cursor-pointer select-none group transition-colors",
+                            sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                          )}
+                          onClick={() => handleSort('name')}
+                          title="Ordenar por Nombre"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Nombre</span>
+                            {renderSortIcon('name')}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className={cn(
+                            "cursor-pointer select-none group transition-colors",
+                            sortConfig.key === 'active' ? "text-primary font-bold" : "hover:text-foreground"
+                          )}
+                          onClick={() => handleSort('active')}
+                          title="Ordenar por Estado"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Estado</span>
+                            {renderSortIcon('active')}
+                          </div>
+                        </TableHead>
                         <TableHead className="text-right">Acciones</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -183,8 +249,8 @@ export default function AdminUnitsOfMeasurePage() {
                                     <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                                 </TableCell>
                             </TableRow>
-                        ) : units.length > 0 ? (
-                            units.map((unit) => (
+                        ) : sortedUnits.length > 0 ? (
+                            sortedUnits.map((unit) => (
                             <TableRow key={unit.id}>
                                 <TableCell className="font-medium">{unit.name}</TableCell>
                                 <TableCell>

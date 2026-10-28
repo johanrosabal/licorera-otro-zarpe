@@ -7,8 +7,10 @@ import { useToast } from '@/hooks/use-toast';
 import { addInventoryMovement } from '@/lib/inventory-service';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Package, Eye, PlusCircle, PackagePlus, PackageMinus, PackageSearch, FilterX, Calendar as CalendarIcon, FileText } from 'lucide-react';
+import { Loader2, Package, Eye, PlusCircle, PackagePlus, PackageMinus, PackageSearch, FilterX, Calendar as CalendarIcon, FileText, ArrowUpDown, ArrowUp, ArrowDown, DollarSign, Box, CheckCircle, XCircle, Star, Edit } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
+import { updateProduct } from '@/lib/products-service';
+import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
@@ -309,17 +311,103 @@ function ProductMovementsDetail({ movements, product }) {
   )
 }
 
+function DetailItem({ icon: Icon, label, value, valueClassName }) {
+    if (value === null || value === undefined) return null;
+    return (
+        <div className="flex items-start gap-2">
+            <Icon className="h-4 w-4 mt-1 text-muted-foreground shrink-0" />
+            <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className={cn("font-medium", valueClassName)}>{value}</p>
+            </div>
+        </div>
+    );
+}
+
+function DetailBoolean({ label, value }) {
+    return (
+        <div className="flex items-center gap-2">
+            {value ? <CheckCircle className="h-4 w-4 text-green-500 shrink-0" /> : <XCircle className="h-4 w-4 text-muted-foreground shrink-0" />}
+            <span className={value ? 'font-semibold' : 'text-muted-foreground'}>{label}</span>
+        </div>
+    );
+}
+
+function AdminProductDetailModal({ product, onClose }) {
+    if (!product) return null;
+
+    const formatDate = (timestamp) => {
+        if (!timestamp) return 'N/A';
+        const dateObj = timestamp.toDate ? timestamp.toDate() : (timestamp.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp));
+        return isNaN(dateObj.getTime()) ? 'N/A' : format(dateObj, "dd MMM yyyy, HH:mm", { locale: es });
+    };
+
+    return (
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+                <DialogTitle>{product.name}</DialogTitle>
+                <DialogDescription>{product.category || 'Sin categoría'} / {product.brand || 'Sin marca'}</DialogDescription>
+            </DialogHeader>
+            <div className="grid md:grid-cols-2 gap-8 py-4">
+                <div className="flex flex-col gap-4">
+                    <div className="relative aspect-square w-full max-w-sm mx-auto overflow-hidden rounded-lg border">
+                        <Image src={product.image || "https://picsum.photos/400/500"} alt={product.name} fill className="object-cover" unoptimized/>
+                    </div>
+                    <p className="text-muted-foreground text-sm">{product.description || 'Sin descripción'}</p>
+                </div>
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-semibold mb-2">Precios y Stock</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <DetailItem icon={DollarSign} label="Precio de Costo" value={formatCurrency(product.costPrice)} />
+                            <DetailItem icon={DollarSign} label="Precio de Venta" value={formatCurrency(product.sellingPrice)} />
+                            <DetailItem icon={Package} label="Stock Actual" value={product.stock} />
+                            <DetailItem icon={Box} label="Unidad de Medida" value={product.unitOfMeasure || 'Unidad'} />
+                        </div>
+                    </div>
+                    <Separator />
+                    <div>
+                        <h3 className="text-lg font-semibold mb-2">Propiedades</h3>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                           <DetailBoolean label="Activo" value={product.active !== false} />
+                           <DetailBoolean label="Destacado" value={product.featured} />
+                           <DetailBoolean label="Uso Interno" value={product.internalOnly} />
+                           <DetailBoolean label="En Promoción" value={product.hasPromotion} />
+                           {product.hasPromotion && <DetailItem icon={DollarSign} label="Descuento" value={`${product.promotionPercentage}%`} />}
+                           <DetailBoolean label="Es un Combo" value={product.isBundle} />
+                           <DetailBoolean label="Tiene Alcohol" value={product.hasAlcohol} />
+                           {product.hasAlcohol && <DetailItem icon={Package} label="Grado Alc." value={`${product.alcoholGrade}%`} />}
+                        </div>
+                    </div>
+                    <Separator />
+                    <div>
+                        <h3 className="text-lg font-semibold mb-2">Información Adicional</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <DetailItem icon={CalendarIcon} label="Creado" value={formatDate(product.createdAt)} />
+                            <DetailItem icon={Edit} label="Última Modificación" value={formatDate(product.updatedAt)} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={onClose}>Cerrar</Button>
+            </DialogFooter>
+        </DialogContent>
+    );
+}
+
 function ReportSkeleton() {
     const SkeletonRow = () => (
         <TableRow>
             <TableCell><Skeleton className="h-10 w-10 rounded-md" /></TableCell>
             <TableCell><Skeleton className="h-5 w-40" /></TableCell>
             <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+            <TableCell><Skeleton className="h-6 w-16" /></TableCell>
             <TableCell className="text-right"><Skeleton className="h-6 w-10 ml-auto" /></TableCell>
             <TableCell className="text-right"><Skeleton className="h-5 w-20 ml-auto" /></TableCell>
             <TableCell className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableCell>
             <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-            <TableCell className="text-right"><Skeleton className="h-8 w-32 ml-auto" /></TableCell>
+            <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto rounded-md" /></TableCell>
         </TableRow>
     );
 
@@ -351,6 +439,7 @@ function ReportSkeleton() {
                             <TableHead className="w-[80px]">Imagen</TableHead>
                             <TableHead>Producto</TableHead>
                             <TableHead>Categoría</TableHead>
+                            <TableHead>Estado</TableHead>
                             <TableHead className="text-right">Stock Actual</TableHead>
                             <TableHead className="text-right">Costo</TableHead>
                             <TableHead className="text-right">Valor Inventario</TableHead>
@@ -380,9 +469,23 @@ export default function InventoryReportPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
+  const [selectedProductForInfo, setSelectedProductForInfo] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [siteName, setSiteName] = useState('OTRO ZARPE');
   const { user } = useAuth();
+
+  const handleToggleActive = async (product) => {
+    if (!user) {
+        toast({ title: "Error", description: "Debes iniciar sesión para realizar esta acción.", variant: "destructive" });
+        return;
+    }
+    try {
+        await updateProduct(product.id, { active: !product.active }, user);
+        toast({ title: "Éxito", description: `Producto ${product.active ? 'desactivado' : 'activado'}.` });
+    } catch (error) {
+        toast({ title: "Error", description: "No se pudo actualizar el estado del producto.", variant: "destructive" });
+    }
+  };
 
   useEffect(() => {
     getHomepageSettings().then(settings => {
@@ -396,6 +499,29 @@ export default function InventoryReportPage() {
   const [selectedUser, setSelectedUser] = useState('all');
   const [dateRange, setDateRange] = useState(undefined);
   const [filterOutOfStock, setFilterOutOfStock] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -447,7 +573,7 @@ export default function InventoryReportPage() {
   const filteredProductList = useMemo(() => {
       if (!productsWithMovements) return [];
       
-      return productsWithMovements.filter(product => {
+      const filtered = productsWithMovements.filter(product => {
           const productFilterMatch = selectedProduct === 'all' || product.id === selectedProduct;
           const outOfStockFilterMatch = !filterOutOfStock || product.stock === 0;
 
@@ -475,8 +601,54 @@ export default function InventoryReportPage() {
           }
           
           return true;
-      }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [productsWithMovements, selectedProduct, selectedType, selectedUser, dateRange, filterOutOfStock]);
+      });
+
+      if (!sortConfig.key) return filtered;
+
+      return [...filtered].sort((a, b) => {
+        let comparison = 0;
+        const stockA = a.stock || 0;
+        const stockB = b.stock || 0;
+        const costA = a.costPrice || 0;
+        const costB = b.costPrice || 0;
+        const valueA = stockA * costA;
+        const valueB = stockB * costB;
+
+        switch (sortConfig.key) {
+          case 'name':
+            comparison = (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base', numeric: true });
+            break;
+          case 'category':
+            comparison = (a.category || '').localeCompare(b.category || '', 'es', { sensitivity: 'base' });
+            break;
+          case 'active': {
+            const activeA = a.active !== false ? 1 : 0;
+            const activeB = b.active !== false ? 1 : 0;
+            comparison = activeB - activeA;
+            break;
+          }
+          case 'stock':
+            comparison = stockA - stockB;
+            break;
+          case 'costPrice':
+            comparison = costA - costB;
+            break;
+          case 'inventoryValue':
+            comparison = valueA - valueB;
+            break;
+          case 'lastMovement': {
+            const timeA = a.movements?.[0]?.createdAt?.toDate ? a.movements[0].createdAt.toDate().getTime() : (a.movements?.[0]?.createdAt?.seconds ? a.movements[0].createdAt.seconds * 1000 : 0);
+            const timeB = b.movements?.[0]?.createdAt?.toDate ? b.movements[0].createdAt.toDate().getTime() : (b.movements?.[0]?.createdAt?.seconds ? b.movements[0].createdAt.seconds * 1000 : 0);
+            comparison = timeA - timeB;
+            break;
+          }
+          default:
+            comparison = 0;
+        }
+
+        return sortConfig.direction === 'asc' ? comparison : -comparison;
+      });
+  }, [productsWithMovements, selectedProduct, selectedType, selectedUser, dateRange, filterOutOfStock, sortConfig]);
 
 
   
@@ -611,6 +783,15 @@ export default function InventoryReportPage() {
             <ProductMovementsDetail movements={selectedProductForDetail.movements} product={selectedProductForDetail} />
         )}
       </Dialog>
+
+      <Dialog open={!!selectedProductForInfo} onOpenChange={(open) => !open && setSelectedProductForInfo(null)}>
+        {selectedProductForInfo && (
+            <AdminProductDetailModal 
+              product={products.find(p => p.id === selectedProductForInfo.id) || selectedProductForInfo} 
+              onClose={() => setSelectedProductForInfo(null)} 
+            />
+        )}
+      </Dialog>
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -712,12 +893,97 @@ export default function InventoryReportPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[80px]">Imagen</TableHead>
-                    <TableHead>Producto</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead className="text-right">Stock Actual</TableHead>
-                    <TableHead className="text-right">Costo</TableHead>
-                    <TableHead className="text-right">Valor Inventario</TableHead>
-                    <TableHead>Último Movimiento</TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors",
+                        sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('name')}
+                      title="Ordenar por Producto"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Producto</span>
+                        {renderSortIcon('name')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors",
+                        sortConfig.key === 'category' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('category')}
+                      title="Ordenar por Categoría"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Categoría</span>
+                        {renderSortIcon('category')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors",
+                        sortConfig.key === 'active' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('active')}
+                      title="Ordenar por Estado"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Estado</span>
+                        {renderSortIcon('active')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors text-right",
+                        sortConfig.key === 'stock' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('stock')}
+                      title="Ordenar por Stock Actual"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Stock Actual</span>
+                        {renderSortIcon('stock')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors text-right",
+                        sortConfig.key === 'costPrice' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('costPrice')}
+                      title="Ordenar por Costo"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Costo</span>
+                        {renderSortIcon('costPrice')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors text-right",
+                        sortConfig.key === 'inventoryValue' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('inventoryValue')}
+                      title="Ordenar por Valor Inventario"
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <span>Valor Inventario</span>
+                        {renderSortIcon('inventoryValue')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className={cn(
+                        "cursor-pointer select-none group transition-colors",
+                        sortConfig.key === 'lastMovement' ? "text-primary font-bold" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleSort('lastMovement')}
+                      title="Ordenar por Último Movimiento"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Último Movimiento</span>
+                        {renderSortIcon('lastMovement')}
+                      </div>
+                    </TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -726,10 +992,40 @@ export default function InventoryReportPage() {
                     filteredProductList.map((product) => (
                       <TableRow key={product.id}>
                         <TableCell>
-                          <Image src={product.image || "https://picsum.photos/100/100"} alt={product.name} width={40} height={40} className="rounded-md object-cover" unoptimized/>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProductForInfo(product)}
+                            className="cursor-pointer block rounded-md overflow-hidden hover:opacity-80 transition-opacity"
+                            title="Ver detalles del producto"
+                          >
+                            <Image src={product.image || "https://picsum.photos/100/100"} alt={product.name} width={40} height={40} className="rounded-md object-cover" unoptimized/>
+                          </button>
                         </TableCell>
-                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell>
+                          <button 
+                            type="button"
+                            onClick={() => setSelectedProductForInfo(product)}
+                            className="font-medium text-left hover:text-primary hover:underline transition-colors cursor-pointer group flex items-center gap-1.5"
+                            title="Ver detalles del producto"
+                          >
+                            <span>{product.name}</span>
+                            <Eye className="h-3.5 w-3.5 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </button>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">{product.category}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              id={`active-switch-${product.id}`}
+                              checked={product.active !== false}
+                              onCheckedChange={() => handleToggleActive(product)}
+                              aria-label={`Activar o desactivar ${product.name}`}
+                            />
+                            <Label htmlFor={`active-switch-${product.id}`} className="text-xs cursor-pointer select-none">
+                              {product.active !== false ? 'Activo' : 'Inactivo'}
+                            </Label>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right font-bold text-lg">{product.stock}</TableCell>
                         <TableCell className="text-right text-muted-foreground">{formatCurrency(product.costPrice)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(product.stock * (product.costPrice || 0))}</TableCell>
@@ -739,19 +1035,20 @@ export default function InventoryReportPage() {
                         <TableCell className="text-right">
                           <Button 
                                 variant="outline" 
-                                size="sm" 
+                                size="icon" 
                                 onClick={() => openDetailModal(product)}
-                                className={cn(product.stock === 0 && 'text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive')}
+                                title={product.stock === 0 ? "Ver Movimientos (Agotado)" : "Ver Movimientos"}
+                                aria-label={product.stock === 0 ? "Ver Movimientos (Agotado)" : "Ver Movimientos"}
+                                className={cn("h-8 w-8 ml-auto", product.stock === 0 && 'text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive')}
                             >
-                                <Eye className="mr-2 h-4 w-4" />
-                                {product.stock === 0 ? "Ver Movimientos (Agotado)" : "Ver Movimientos"}
+                                <Eye className="h-4 w-4" />
                             </Button>
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground h-48">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground h-48">
                         <PackageSearch className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
                         <p className="font-semibold">No se encontraron productos.</p>
                         <p>Intenta ajustar o limpiar los filtros.</p>
@@ -767,10 +1064,34 @@ export default function InventoryReportPage() {
                     filteredProductList.map((product) => (
                         <Card key={product.id}>
                             <CardHeader className="flex flex-row items-start gap-4 p-4">
-                                <Image src={product.image || "https://picsum.photos/100/100"} alt={product.name} width={64} height={64} className="rounded-md object-cover border" unoptimized/>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProductForInfo(product)}
+                                  className="cursor-pointer block rounded-md overflow-hidden hover:opacity-80 transition-opacity"
+                                  title="Ver detalles del producto"
+                                >
+                                  <Image src={product.image || "https://picsum.photos/100/100"} alt={product.name} width={64} height={64} className="rounded-md object-cover border" unoptimized/>
+                                </button>
                                 <div className="flex-1">
-                                    <p className="font-semibold">{product.name}</p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedProductForInfo(product)}
+                                      className="font-semibold text-left hover:text-primary hover:underline transition-colors block"
+                                      title="Ver detalles del producto"
+                                    >
+                                      {product.name}
+                                    </button>
                                     <p className="text-sm text-muted-foreground">{product.category}</p>
+                                    <div className="flex items-center space-x-2 mt-2">
+                                        <Switch
+                                          id={`mobile-active-${product.id}`}
+                                          checked={product.active !== false}
+                                          onCheckedChange={() => handleToggleActive(product)}
+                                        />
+                                        <Label htmlFor={`mobile-active-${product.id}`} className="text-xs cursor-pointer select-none">
+                                          {product.active !== false ? 'Activo' : 'Inactivo'}
+                                        </Label>
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-4 pt-0 grid grid-cols-2 gap-4 text-sm">

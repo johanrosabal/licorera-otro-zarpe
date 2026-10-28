@@ -2,8 +2,9 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Search, Construction, Wine, Clock } from 'lucide-react'
+import { ArrowRight, Search, Construction, Wine, Clock, X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { useEffect, useState, useMemo } from 'react'
 import { db } from '@/lib/firebase'
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
 
 export default function Home() {
+  const router = useRouter()
   const [allProducts, setAllProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -24,6 +26,10 @@ export default function Home() {
   const { user } = useAuth();
 
   const handleProductClick = (product) => {
+    if (!user) {
+      router.push('/signup');
+      return;
+    }
     setSelectedProduct(product);
     setIsModalOpen(true);
   };
@@ -87,13 +93,45 @@ export default function Home() {
     return productsWithCalculatedStock;
   }, [productsWithCalculatedStock, user]);
   
-  const featuredProducts = useMemo(() => {
-    return visibleProducts.filter(p => p.featured && p.stock > 0);
-  }, [visibleProducts]);
+  const normalize = (text) =>
+    (text || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const isSearching = featuredSearchTerm.trim().length > 0;
 
   const filteredGridProducts = useMemo(() => {
-    return featuredProducts.filter(p => p.name.toLowerCase().includes(featuredSearchTerm.toLowerCase()));
-  }, [featuredProducts, featuredSearchTerm]);
+    if (!isSearching) {
+      const featured = visibleProducts.filter(p => p.featured && p.stock > 0);
+      if (featured.length > 0) return featured;
+      return visibleProducts.filter(p => p.stock > 0).slice(0, 12);
+    }
+
+    const queryClean = normalize(featuredSearchTerm);
+    const queryWords = queryClean.split(/\s+/).filter(Boolean);
+
+    const matches = visibleProducts.filter(p => {
+      const name = normalize(p.name);
+      const brand = normalize(p.brand);
+      const category = normalize(p.category);
+      const description = normalize(p.description);
+      const searchableContent = `${name} ${brand} ${category} ${description}`;
+
+      return queryWords.every(word => searchableContent.includes(word));
+    });
+
+    return matches.sort((a, b) => {
+      const aInStock = (a.stock > 0) ? 1 : 0;
+      const bInStock = (b.stock > 0) ? 1 : 0;
+      if (aInStock !== bInStock) {
+        return bInStock - aInStock;
+      }
+      return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+    });
+  }, [visibleProducts, featuredSearchTerm, isSearching]);
 
 
   const promotionalProducts = useMemo(() => {
@@ -139,20 +177,46 @@ export default function Home() {
           </section>
         )}
 
-        {featuredProducts.length > 0 && (
+        {(visibleProducts.length > 0 || isSearching) && (
           <section>
               <div className="flex flex-col md:flex-row md:justify-between md:items-baseline mb-6 gap-4">
                   <div className="w-full">
                     <div className="relative w-full">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                         <Input
-                            placeholder="Filtrar productos..."
-                            className="pl-10 w-full"
+                            placeholder="Buscar cualquier producto, marca o categoría..."
+                            className="pl-10 pr-10 w-full"
                             value={featuredSearchTerm}
                             onChange={(e) => setFeaturedSearchTerm(e.target.value)}
                         />
+                        {featuredSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setFeaturedSearchTerm('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                            title="Limpiar búsqueda"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
                     </div>
-                    <p className="text-sm text-muted-foreground mt-2">Puedes escribir para filtrar encontrar un producto rapidamente</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-muted-foreground">
+                        {isSearching 
+                          ? `Mostrando resultados para "${featuredSearchTerm}" (${filteredGridProducts.length} ${filteredGridProducts.length === 1 ? 'encontrado' : 'encontrados'})`
+                          : 'Puedes escribir para filtrar encontrar un producto rapidamente'}
+                      </p>
+                      {isSearching && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-xs text-primary h-auto py-1 px-2"
+                          onClick={() => setFeaturedSearchTerm('')}
+                        >
+                          Limpiar filtro
+                        </Button>
+                      )}
+                    </div>
                   </div>
               </div>
               {filteredGridProducts.length > 0 ? (
@@ -165,7 +229,14 @@ export default function Home() {
                   <div className="text-center py-16 text-muted-foreground">
                       <Search className="mx-auto h-16 w-16 mb-4 opacity-50" />
                       <h3 className="text-xl font-semibold">No se encontraron resultados</h3>
-                      <p>Intenta con un término de búsqueda diferente.</p>
+                      <p>No encontramos ningún producto que coincida con &ldquo;{featuredSearchTerm}&rdquo;.</p>
+                      <Button 
+                        variant="outline" 
+                        className="mt-4"
+                        onClick={() => setFeaturedSearchTerm('')}
+                      >
+                        Ver todos los productos
+                      </Button>
                   </div>
               )}
           </section>

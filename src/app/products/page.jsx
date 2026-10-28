@@ -2,8 +2,8 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useMemo, useEffect, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { ProductCard } from '@/components/product-card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,7 +16,8 @@ import { ProductDetailModal } from '@/components/product/product-details'
 import { useAuth } from '@/hooks/use-auth'
 
 
-export default function ProductsPage() {
+function ProductsContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const initialCategory = searchParams.get('category') || 'Todos'
 
@@ -33,6 +34,10 @@ export default function ProductsPage() {
   const { user } = useAuth();
 
   const handleProductClick = (product) => {
+    if (!user) {
+      router.push('/signup');
+      return;
+    }
     setSelectedProduct(product);
     setIsModalOpen(true);
   };
@@ -74,6 +79,36 @@ export default function ProductsPage() {
     };
   }, [])
 
+  const uniqueCategories = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const c of categories) {
+      const name = c?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...c, name });
+      }
+    }
+    return result;
+  }, [categories]);
+
+  const uniqueBrands = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const b of brands) {
+      const name = b?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...b, name });
+      }
+    }
+    return result;
+  }, [brands]);
+
   const productsWithCalculatedStock = useMemo(() => {
     const productsMap = new Map(products.map(p => [p.id, p]));
     return products.map(p => {
@@ -106,12 +141,28 @@ export default function ProductsPage() {
   }, [productsWithCalculatedStock, user]);
 
 
+  const normalize = (text) =>
+    (text || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
   const filteredProducts = useMemo(() => {
+    const queryClean = normalize(searchTerm);
+    const queryWords = queryClean.split(/\s+/).filter(Boolean);
+
     return visibleProducts
-      .filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+      .filter(product => {
+        if (queryWords.length === 0) return true;
+        const name = normalize(product.name);
+        const brand = normalize(product.brand);
+        const category = normalize(product.category);
+        const description = normalize(product.description);
+        const searchableContent = `${name} ${brand} ${category} ${description}`;
+        return queryWords.every(word => searchableContent.includes(word));
+      })
       .filter(product =>
         selectedCategory === 'Todos' ? true : product.category === selectedCategory
       )
@@ -126,7 +177,7 @@ export default function ProductsPage() {
                   return b.sellingPrice - a.sellingPrice;
               case 'name-asc':
               default:
-                  return a.name.localeCompare(b.name);
+                  return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
           }
       });
   }, [searchTerm, selectedCategory, selectedBrand, sortBy, visibleProducts])
@@ -164,7 +215,7 @@ export default function ProductsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Todos">Todas las categorías</SelectItem>
-              {categories.map(category => (
+              {uniqueCategories.map(category => (
                 <SelectItem key={category.id} value={category.name}>
                   {category.name}
                 </SelectItem>
@@ -177,7 +228,7 @@ export default function ProductsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Todos">Todas las marcas</SelectItem>
-              {brands.map(brand => (
+              {uniqueBrands.map(brand => (
                 <SelectItem key={brand.id} value={brand.name}>
                   {brand.name}
                 </SelectItem>
@@ -245,5 +296,17 @@ export default function ProductsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      </div>
+    }>
+      <ProductsContent />
+    </Suspense>
   )
 }

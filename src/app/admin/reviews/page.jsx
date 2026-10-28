@@ -14,12 +14,21 @@ import Link from 'next/link';
 import { updateReview, deleteReview } from '@/lib/reviews-service';
 
 
+import { useAuth } from '@/hooks/use-auth';
+
 export default function AdminReviewsPage() {
+    const { user, loading: authLoading } = useAuth();
     const [reviews, setReviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
 
     useEffect(() => {
+        if (authLoading) return;
+        if (!user || user.role !== 'ADMIN') {
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         const q = query(
             collectionGroup(db, 'reviews'),
@@ -30,7 +39,7 @@ export default function AdminReviewsPage() {
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedReviews = snapshot.docs.map(doc => ({
                 id: doc.id,
-                productId: doc.ref.parent.parent.id, // Get product ID from path
+                productId: doc.ref.parent?.parent?.id || doc.data().productId, // Get product ID from path or doc
                 ...doc.data()
             }));
             setReviews(fetchedReviews);
@@ -42,7 +51,7 @@ export default function AdminReviewsPage() {
         });
 
         return () => unsubscribe();
-    }, [toast]);
+    }, [user, authLoading, toast]);
 
     const handleApprove = async (review) => {
         try {

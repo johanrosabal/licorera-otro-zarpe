@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, cn } from '@/lib/utils';
-import { PlusCircle, MoreHorizontal, Loader2, Edit, Trash2, Search, FilterX, Eye, Package, DollarSign, Star, Calendar, Box, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Loader2, Edit, Trash2, Search, FilterX, Eye, Package, DollarSign, Star, Calendar, Box, CheckCircle, XCircle, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Image from 'next/image';
 import {
   DropdownMenu,
@@ -251,6 +251,31 @@ export default function AdminProductsPage() {
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
+
   // Pagination
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
@@ -291,14 +316,58 @@ export default function AdminProductsPage() {
       unsubBrands();
     };
   }, [toast]);
+
+  const uniqueCategories = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const c of categories) {
+      const name = c?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...c, name });
+      }
+    }
+    return result;
+  }, [categories]);
+
+  const uniqueBrands = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const b of brands) {
+      const name = b?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...b, name });
+      }
+    }
+    return result;
+  }, [brands]);
   
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
-      const searchTermLower = searchTerm.toLowerCase();
-      
-      const searchMatch = searchTerm === '' ||
-        product.name.toLowerCase().includes(searchTermLower) ||
-        (product.description && product.description.toLowerCase().includes(searchTermLower));
+    const normalize = (text) =>
+      (text || '')
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    const cleanQuery = normalize(searchTerm);
+    const queryWords = cleanQuery.split(/\s+/).filter(Boolean);
+
+    const list = products.filter(product => {
+      const searchMatch = queryWords.length === 0 || (() => {
+        const name = normalize(product.name);
+        const brand = normalize(product.brand);
+        const category = normalize(product.category);
+        const description = normalize(product.description);
+        const content = `${name} ${brand} ${category} ${description}`;
+        return queryWords.every(word => content.includes(word));
+      })();
         
       const categoryMatch = selectedCategory === 'all' || product.category === selectedCategory;
       const brandMatch = selectedBrand === 'all' || product.brand === selectedBrand;
@@ -306,10 +375,70 @@ export default function AdminProductsPage() {
 
       return searchMatch && categoryMatch && brandMatch && statusMatch;
     });
-  }, [products, searchTerm, selectedCategory, selectedBrand, selectedStatus]);
 
-  // Reset to page 1 whenever filters or page size change
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedCategory, selectedBrand, selectedStatus, pageSize]);
+    if (!sortConfig.key) return list;
+
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortConfig.key) {
+        case 'name': {
+          const nameA = (a.name || '').toString().trim();
+          const nameB = (b.name || '').toString().trim();
+          comparison = nameA.localeCompare(nameB, 'es', { sensitivity: 'base', numeric: true });
+          break;
+        }
+        case 'active': {
+          const numA = a.active ? 1 : 0;
+          const numB = b.active ? 1 : 0;
+          comparison = numB - numA;
+          break;
+        }
+        case 'featured': {
+          const numA = a.featured ? 1 : 0;
+          const numB = b.featured ? 1 : 0;
+          comparison = numB - numA;
+          break;
+        }
+        case 'category': {
+          const catA = (a.category || '').toString().trim();
+          const catB = (b.category || '').toString().trim();
+          comparison = catA.localeCompare(catB, 'es', { sensitivity: 'base' });
+          if (comparison === 0) {
+            const brandA = (a.brand || '').toString().trim();
+            const brandB = (b.brand || '').toString().trim();
+            comparison = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
+          }
+          break;
+        }
+        case 'costPrice': {
+          const priceA = Number(a.costPrice) || 0;
+          const priceB = Number(b.costPrice) || 0;
+          comparison = priceA - priceB;
+          break;
+        }
+        case 'sellingPrice': {
+          const priceA = Number(a.sellingPrice) || 0;
+          const priceB = Number(b.sellingPrice) || 0;
+          comparison = priceA - priceB;
+          break;
+        }
+        case 'stock': {
+          const stockA = Number(a.stock) || 0;
+          const stockB = Number(b.stock) || 0;
+          comparison = stockA - stockB;
+          break;
+        }
+        default:
+          comparison = 0;
+      }
+
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [products, searchTerm, selectedCategory, selectedBrand, selectedStatus, sortConfig]);
+
+  // Reset to page 1 whenever filters, sorting or page size change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedCategory, selectedBrand, selectedStatus, pageSize, sortConfig]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const paginatedProducts = filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -319,6 +448,7 @@ export default function AdminProductsPage() {
     setSelectedCategory('all');
     setSelectedBrand('all');
     setSelectedStatus('all');
+    setSortConfig({ key: 'name', direction: 'asc' });
   };
 
   const handleToggleActive = async (product) => {
@@ -442,14 +572,14 @@ export default function AdminProductsPage() {
                       <SelectTrigger><SelectValue placeholder="Categoría" /></SelectTrigger>
                       <SelectContent>
                           <SelectItem value="all">Todas las categorías</SelectItem>
-                          {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                          {uniqueCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Select value={selectedBrand} onValueChange={setSelectedBrand}>
                       <SelectTrigger><SelectValue placeholder="Marca" /></SelectTrigger>
                       <SelectContent>
                           <SelectItem value="all">Todas las marcas</SelectItem>
-                          {brands.map(b => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
+                          {uniqueBrands.map(b => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <div className="flex gap-2">
@@ -477,13 +607,97 @@ export default function AdminProductsPage() {
                   <TableHead className="hidden w-[100px] sm:table-cell sticky top-0 z-10 bg-background border-b shadow-sm">
                     Imagen
                   </TableHead>
-                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Nombre</TableHead>
-                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Estado</TableHead>
-                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Destacado</TableHead>
-                  <TableHead className="sticky top-0 z-10 bg-background border-b shadow-sm">Categoría/Marca</TableHead>
-                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">P. Costo</TableHead>
-                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">P. Venta</TableHead>
-                  <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">Stock</TableHead>
+                  <TableHead 
+                    className={cn(
+                      "sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('name')}
+                    title="Ordenar por Nombre"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Nombre</span>
+                      {renderSortIcon('name')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'active' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('active')}
+                    title="Ordenar por Estado"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Estado</span>
+                      {renderSortIcon('active')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'featured' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('featured')}
+                    title="Ordenar por Destacado"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Destacado</span>
+                      {renderSortIcon('featured')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'category' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('category')}
+                    title="Ordenar por Categoría y Marca"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Categoría/Marca</span>
+                      {renderSortIcon('category')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "text-right sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'costPrice' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('costPrice')}
+                    title="Ordenar por Precio de Costo"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>P. Costo</span>
+                      {renderSortIcon('costPrice')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "text-right sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'sellingPrice' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('sellingPrice')}
+                    title="Ordenar por Precio de Venta"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>P. Venta</span>
+                      {renderSortIcon('sellingPrice')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "text-right sticky top-0 z-10 bg-background border-b shadow-sm cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'stock' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('stock')}
+                    title="Ordenar por Stock"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Stock</span>
+                      {renderSortIcon('stock')}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right sticky top-0 z-10 bg-background border-b shadow-sm">
                     <span className="sr-only">Acciones</span>
                   </TableHead>

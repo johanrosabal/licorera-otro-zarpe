@@ -9,15 +9,20 @@ export async function POST(request) {
       return NextResponse.json({ message: 'UID is required' }, { status: 400 });
     }
 
-    // Optional: Verify the requester is an admin
-    // In a real app, you'd verify the ID Token from the Authorization header:
-    /*
+    // Verify the requester is an admin
     const authHeader = request.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ message: 'No autorizado: Token de autenticación requerido.' }, { status: 401 });
+    }
     const idToken = authHeader.split('Bearer ')[1];
     const decodedToken = await adminAuth.verifyIdToken(idToken);
-    if (decodedToken.role !== 'ADMIN') return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    */
+
+    const requesterDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+    const requesterRole = requesterDoc.exists ? requesterDoc.data()?.role : null;
+
+    if (requesterRole !== 'ADMIN' && decodedToken.role !== 'ADMIN') {
+      return NextResponse.json({ message: 'Prohibido: Se requieren permisos de administrador.' }, { status: 403 });
+    }
 
     // 1. Delete from Firebase Authentication
     try {

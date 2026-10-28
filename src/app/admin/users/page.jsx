@@ -7,9 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getUsers, updateUserProfile } from '@/lib/users-service';
-import { Loader2, MoreHorizontal, Search, Check, Shield, User, Truck, Edit, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Search, Check, Shield, User, Truck, Edit, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +32,7 @@ import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { collection, onSnapshot, query, orderBy, doc, deleteDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { 
   AlertDialog, 
   AlertDialogAction, 
@@ -48,6 +49,7 @@ const ROLES = ['ADMIN', 'DELIVERY', 'CLIENT'];
 const roleConfig = {
     ADMIN: { icon: Shield, color: 'bg-destructive text-destructive-foreground' },
     DELIVERY: { icon: Truck, color: 'bg-blue-500/20 text-blue-700' },
+    REPARTIDOR: { icon: Truck, color: 'bg-blue-500/20 text-blue-700' },
     CLIENT: { icon: User, color: 'bg-muted text-muted-foreground' }
 };
 
@@ -157,7 +159,30 @@ export default function AdminUsersPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const { toast } = useToast();
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
   
   useEffect(() => {
     setLoading(true);
@@ -176,13 +201,38 @@ export default function AdminUsersPage() {
 
   const filteredUsers = useMemo(() => {
     const lowercasedFilter = searchTerm.toLowerCase();
-    return users.filter((user) => {
+    const filtered = users.filter((user) => {
       return (
         user.name?.toLowerCase().includes(lowercasedFilter) ||
         user.email?.toLowerCase().includes(lowercasedFilter)
       );
     });
-  }, [users, searchTerm]);
+
+    if (!sortConfig.key) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortConfig.key === 'name') {
+        const nameA = (a.name || a.email || '').toString().trim();
+        const nameB = (b.name || b.email || '').toString().trim();
+        comparison = nameA.localeCompare(nameB, 'es', { sensitivity: 'base', numeric: true });
+      } else if (sortConfig.key === 'role') {
+        const roleA = (a.role || '').toString().trim();
+        const roleB = (b.role || '').toString().trim();
+        comparison = roleA.localeCompare(roleB, 'es', { sensitivity: 'base' });
+      } else if (sortConfig.key === 'createdAt') {
+        const getTime = (val) => {
+          if (!val) return 0;
+          if (typeof val.toDate === 'function') return val.toDate().getTime();
+          if (val.seconds) return val.seconds * 1000;
+          const parsed = new Date(val).getTime();
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        comparison = getTime(a.createdAt) - getTime(b.createdAt);
+      }
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [users, searchTerm, sortConfig]);
   
   const getInitials = (nameOrEmail) => {
     if (!nameOrEmail) return 'U';
@@ -208,9 +258,13 @@ export default function AdminUsersPage() {
     setIsDeleting(true);
     try {
         // 1. Attempt to delete from Auth via API
+        const token = await auth.currentUser?.getIdToken();
         const response = await fetch('/api/admin/delete-user', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({ uid: userToDelete.id })
         });
         
@@ -278,9 +332,45 @@ export default function AdminUsersPage() {
             <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Fecha de Creación</TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('name')}
+                    title="Ordenar por Usuario"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Usuario</span>
+                      {renderSortIcon('name')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'role' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('role')}
+                    title="Ordenar por Rol"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Rol</span>
+                      {renderSortIcon('role')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'createdAt' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('createdAt')}
+                    title="Ordenar por Fecha de Creación"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Fecha de Creación</span>
+                      {renderSortIcon('createdAt')}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>

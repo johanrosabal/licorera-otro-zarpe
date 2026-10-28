@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { getBrands, addBrand, deleteBrand, updateBrand } from '@/lib/brands';
-import { PlusCircle, Trash2, Loader2, Edit, Bookmark, Search, Download, Upload } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, Bookmark, Search, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { exportToJSON, importFromJSON } from '@/lib/data-utils';
 import {
   AlertDialog,
@@ -46,7 +47,30 @@ export default function AdminBrandsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
   const { toast } = useToast();
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'brands'), orderBy('name'));
@@ -63,29 +87,57 @@ export default function AdminBrandsPage() {
   }, [toast]);
   
   const filteredBrands = useMemo(() => {
-    if (!searchTerm) {
-        return brands;
-    }
-    return brands.filter(brand =>
-        brand.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [brands, searchTerm]);
+    const list = brands.filter(brand => {
+      if (!searchTerm) return true;
+      return brand.name.toLowerCase().includes(searchTerm.toLowerCase());
+    });
 
+    if (!sortConfig.key) return list;
+
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+      if (sortConfig.key === 'name') {
+        const nameA = (a.name || '').toString().trim();
+        const nameB = (b.name || '').toString().trim();
+        comparison = nameA.localeCompare(nameB, 'es', { sensitivity: 'base', numeric: true });
+      } else if (sortConfig.key === 'active') {
+        const numA = a.active ? 1 : 0;
+        const numB = b.active ? 1 : 0;
+        comparison = numB - numA;
+      }
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [brands, searchTerm, sortConfig]);
+
+  const duplicateBrandNames = useMemo(() => {
+    const counts = {};
+    for (const b of brands) {
+      const name = b.name?.trim().toLowerCase();
+      if (name) counts[name] = (counts[name] || 0) + 1;
+    }
+    return new Set(Object.keys(counts).filter(name => counts[name] > 1));
+  }, [brands]);
 
   const handleAddBrand = async (e) => {
     e.preventDefault();
-    if (!newBrandName.trim()) {
+    const trimmed = newBrandName.trim();
+    if (!trimmed) {
         toast({ title: "Error", description: "El nombre de la marca no puede estar vacío.", variant: "destructive" });
+        return;
+    }
+    const isDuplicate = brands.some(b => b.name?.trim().toLowerCase() === trimmed.toLowerCase());
+    if (isDuplicate) {
+        toast({ title: "Error", description: `Ya existe una marca con el nombre "${trimmed}".`, variant: "destructive" });
         return;
     }
     setSubmitting(true);
     try {
-      await addBrand(newBrandName);
+      await addBrand(trimmed);
       setNewBrandName('');
       toast({ title: "Éxito", description: "Marca añadida correctamente." });
       setIsAddDialogOpen(false);
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo añadir la marca.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "No se pudo añadir la marca.", variant: "destructive" });
     } finally {
         setSubmitting(false);
     }
@@ -111,15 +163,25 @@ export default function AdminBrandsPage() {
 
   const handleEditBrand = async (e) => {
     e.preventDefault();
-    if (!editingBrand || !editingBrandName.trim()) return;
+    if (!editingBrand) return;
+    const trimmed = editingBrandName.trim();
+    if (!trimmed) {
+        toast({ title: "Error", description: "El nombre de la marca no puede estar vacío.", variant: "destructive" });
+        return;
+    }
+    const isDuplicate = brands.some(b => b.id !== editingBrand.id && b.name?.trim().toLowerCase() === trimmed.toLowerCase());
+    if (isDuplicate) {
+        toast({ title: "Error", description: `Ya existe otra marca con el nombre "${trimmed}".`, variant: "destructive" });
+        return;
+    }
 
     try {
-        await updateBrand(editingBrand.id, { name: editingBrandName });
+        await updateBrand(editingBrand.id, { name: trimmed });
         toast({ title: "Éxito", description: "Marca actualizada correctamente." });
         setIsEditDialogOpen(false);
         setEditingBrand(null);
     } catch (error) {
-        toast({ title: "Error", description: "No se pudo actualizar la marca.", variant: "destructive" });
+        toast({ title: "Error", description: error.message || "No se pudo actualizar la marca.", variant: "destructive" });
     }
   }
   
@@ -138,10 +200,14 @@ export default function AdminBrandsPage() {
         
         setLoading(true);
         let importedCount = 0;
+        const existingNames = new Set(brands.map(b => b.name?.trim().toLowerCase()).filter(Boolean));
         
         for (const item of data) {
-            if (!item.name) continue;
-            await addBrand(item.name);
+            const trimmed = item.name?.trim();
+            if (!trimmed) continue;
+            if (existingNames.has(trimmed.toLowerCase())) continue;
+            await addBrand(trimmed);
+            existingNames.add(trimmed.toLowerCase());
             importedCount++;
         }
         
@@ -242,8 +308,32 @@ export default function AdminBrandsPage() {
                     <Table className="hidden md:table">
                         <TableHeader>
                             <TableRow>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead>Estado</TableHead>
+                            <TableHead 
+                              className={cn(
+                                "cursor-pointer select-none group transition-colors",
+                                sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                              )}
+                              onClick={() => handleSort('name')}
+                              title="Ordenar por Nombre"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Nombre</span>
+                                {renderSortIcon('name')}
+                              </div>
+                            </TableHead>
+                            <TableHead 
+                              className={cn(
+                                "cursor-pointer select-none group transition-colors",
+                                sortConfig.key === 'active' ? "text-primary font-bold" : "hover:text-foreground"
+                              )}
+                              onClick={() => handleSort('active')}
+                              title="Ordenar por Estado"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Estado</span>
+                                {renderSortIcon('active')}
+                              </div>
+                            </TableHead>
                             <TableHead className="text-right">Acciones</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -257,7 +347,16 @@ export default function AdminBrandsPage() {
                             ) : filteredBrands.length > 0 ? (
                                 filteredBrands.map((brand) => (
                                 <TableRow key={brand.id}>
-                                    <TableCell className="font-medium">{brand.name}</TableCell>
+                                    <TableCell className="font-medium">
+                                        <div className="flex items-center gap-2">
+                                            <span>{brand.name}</span>
+                                            {duplicateBrandNames.has(brand.name?.trim().toLowerCase()) && (
+                                                <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-normal">
+                                                    Duplicada
+                                                </span>
+                                            )}
+                                        </div>
+                                    </TableCell>
                                     <TableCell>
                                         <div className="flex items-center space-x-2">
                                             <Switch
@@ -342,7 +441,14 @@ export default function AdminBrandsPage() {
                         ) : filteredBrands.length > 0 ? (
                            filteredBrands.map(brand => (
                                <Card key={brand.id} className="p-4 flex justify-between items-center">
-                                   <p className="font-medium">{brand.name}</p>
+                                   <div className="flex items-center gap-2">
+                                       <p className="font-medium">{brand.name}</p>
+                                       {duplicateBrandNames.has(brand.name?.trim().toLowerCase()) && (
+                                           <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-normal">
+                                               Duplicada
+                                           </span>
+                                       )}
+                                   </div>
                                    <div className="flex items-center gap-2">
                                        <Switch
                                             id={`active-switch-mobile-${brand.id}`}

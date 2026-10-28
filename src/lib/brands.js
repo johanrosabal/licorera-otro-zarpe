@@ -21,7 +21,9 @@ export const getBrands = async (options = {}) => {
 
 export const addBrand = async (name) => {
   try {
-    const docRef = await addDoc(brandsCollection, { name, active: true });
+    const trimmed = name?.trim();
+    if (!trimmed) throw new Error("El nombre de la marca no puede estar vacío");
+    const docRef = await addDoc(brandsCollection, { name: trimmed, active: true });
     return docRef.id;
   } catch (error) {
     logError(error, 'addBrand');

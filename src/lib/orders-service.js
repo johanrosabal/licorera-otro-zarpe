@@ -66,34 +66,29 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
     if (!userId || !items || items.length === 0 || !paymentMethod) {
         throw new Error('Faltan datos para crear la orden.');
     }
+    if (!paymentReceipt) {
+        throw new Error('El comprobante de pago es obligatorio para procesar el pedido.');
+    }
     
     const orderDocRef = doc(collection(db, 'orders'));
 
     try {
-        const lastOrderQuery = query(ordersCollection, orderBy('invoiceNumber', 'desc'), limit(1));
-        const lastOrderSnapshot = await getDocs(lastOrderQuery);
-        
-        let nextInvoiceNumber = 1;
-        if (!lastOrderSnapshot.empty) {
-            const lastInvoiceStr = lastOrderSnapshot.docs[0].data().invoiceNumber;
-            if(lastInvoiceStr) {
-              const lastInvoiceNum = parseInt(lastInvoiceStr, 10);
-              if(!isNaN(lastInvoiceNum)) {
-                 nextInvoiceNumber = lastInvoiceNum + 1;
-              }
-            }
+        let paymentReceiptUrl = null;
+        if (paymentReceipt instanceof File) {
+            paymentReceiptUrl = await uploadPaymentReceipt(paymentReceipt);
+        } else {
+            throw new Error('El archivo del comprobante de pago no es válido.');
         }
-        const formattedInvoiceNumber = String(nextInvoiceNumber).padStart(6, '0');
+
+        let formattedInvoiceNumber = '000001';
 
         await runTransaction(db, async (transaction) => {
+            // ── PHASE 1: ALL READS ──────────────────────────────────────────
+            const counterDocRef = doc(db, 'settings', 'orderCounter');
+            const counterDoc = await transaction.get(counterDocRef);
+
             const userDocRef = doc(db, 'users', userId);
             const userDoc = await transaction.get(userDocRef);
-            const userData = userDoc.exists() ? userDoc.data() : {};
-
-            let paymentReceiptUrl = null;
-            if (paymentReceipt instanceof File) {
-                paymentReceiptUrl = await uploadPaymentReceipt(paymentReceipt);
-            }
 
             const productSnapshots = new Map();
             const allProductIdsToFetch = new Set();
@@ -119,24 +114,40 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
               )
             );
 
-            finalProductDocs.forEach(doc => {
-                if (doc.exists()) productSnapshots.set(doc.id, doc);
+            finalProductDocs.forEach(docSnap => {
+                if (docSnap.exists()) productSnapshots.set(docSnap.id, docSnap);
             });
 
+            // ── PHASE 2: CALCULATIONS & VALIDATIONS (IN-MEMORY) ─────────────
+            let nextInvoiceNumber = 1;
+            if (counterDoc.exists() && counterDoc.data().lastInvoiceNumber) {
+                nextInvoiceNumber = (counterDoc.data().lastInvoiceNumber || 0) + 1;
+            }
+            formattedInvoiceNumber = String(nextInvoiceNumber).padStart(6, '0');
+
+            const userData = userDoc.exists() ? userDoc.data() : {};
+            const finalUserName = userData.name || userName || userEmail || 'Cliente';
+            const finalUserEmail = userEmail || userData.email || '';
+            const finalPaymentReceiptUrl = paymentReceiptUrl || null;
+            const finalPaymentRef = paymentReference || null;
+
+            const stockUpdates = [];
+            const movementWrites = [];
             const orderItems = [];
+
             for (const cartItem of items) {
                 const productDoc = productSnapshots.get(cartItem.id);
-                 if (!productDoc || !productDoc.exists()) {
-                    throw new Error(`El producto ${cartItem.name} ya no está disponible.`);
+                if (!productDoc || !productDoc.exists()) {
+                    throw new Error(`El producto "${cartItem.name}" ya no está disponible.`);
                 }
                 const productData = productDoc.data();
                 
                 orderItems.push({
                     id: productDoc.id,
-                    name: productData.name,
-                    quantity: cartItem.quantity,
-                    price: productData.sellingPrice,
-                    image: productData.image,
+                    name: productData.name || cartItem.name || 'Producto',
+                    quantity: Number(cartItem.quantity) || 1,
+                    price: Number(productData.sellingPrice) || Number(cartItem.sellingPrice) || 0,
+                    image: productData.image || cartItem.image || '',
                 });
                 
                 if (productData.isBundle) {
@@ -149,50 +160,59 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
                             throw new Error(`Un artículo del combo "${productData.name}" ya no está disponible.`);
                         }
                         const componentData = componentDoc.data();
-                        const requiredStock = bundleComponent.quantity * cartItem.quantity;
+                        const currentCompStock = Number(componentData.stock) || 0;
+                        const requiredStock = (Number(bundleComponent.quantity) || 1) * (Number(cartItem.quantity) || 1);
 
-                        if (componentData.stock < requiredStock) {
-                            throw new Error(`Stock insuficiente para "${componentData.name}" en el combo. Disponible: ${componentData.stock}, Requerido: ${requiredStock}.`);
+                        if (currentCompStock < requiredStock) {
+                            throw new Error(`Stock insuficiente para "${componentData.name}" en el combo. Disponible: ${currentCompStock}, Requerido: ${requiredStock}.`);
                         }
                         
-                        const newStock = componentData.stock - requiredStock;
-                        transaction.update(componentDoc.ref, { stock: newStock });
-                        
+                        const newStock = currentCompStock - requiredStock;
+                        stockUpdates.push({ ref: componentDoc.ref, stock: newStock });
+
                         const movementDocRef = doc(inventoryMovementsCollection);
-                        transaction.set(movementDocRef, {
-                            orderId: orderDocRef.id,
-                            invoiceNumber: formattedInvoiceNumber,
-                            productId: bundleComponent.productId,
-                            type: 'SALIDA',
-                            quantity: -requiredStock,
-                            reason: `Venta Combo: ${productData.name} (#${formattedInvoiceNumber})`,
-                            previousStock: componentData.stock,
-                            newStock,
-                            createdAt: serverTimestamp(),
-                            userId, 
-                            userEmail: userEmail,
+                        movementWrites.push({
+                            ref: movementDocRef,
+                            data: {
+                                orderId: orderDocRef.id,
+                                invoiceNumber: formattedInvoiceNumber,
+                                productId: bundleComponent.productId,
+                                type: 'SALIDA',
+                                quantity: -requiredStock,
+                                reason: `Venta Combo: ${productData.name} (#${formattedInvoiceNumber})`,
+                                previousStock: currentCompStock,
+                                newStock,
+                                createdAt: serverTimestamp(),
+                                userId, 
+                                userEmail: finalUserEmail,
+                            }
                         });
                     }
                 } else {
-                    if (productData.stock < cartItem.quantity) {
-                        throw new Error(`No hay suficiente stock para ${cartItem.name}. Disponible: ${productData.stock}, Solicitado: ${cartItem.quantity}`);
+                    const currentProdStock = Number(productData.stock) || 0;
+                    const requestedQty = Number(cartItem.quantity) || 1;
+                    if (currentProdStock < requestedQty) {
+                        throw new Error(`No hay suficiente stock para "${cartItem.name}". Disponible: ${currentProdStock}, Solicitado: ${requestedQty}`);
                     }
-                    const newStock = productData.stock - cartItem.quantity;
-                    transaction.update(productDoc.ref, { stock: newStock });
+                    const newStock = currentProdStock - requestedQty;
+                    stockUpdates.push({ ref: productDoc.ref, stock: newStock });
 
                     const movementDocRef = doc(inventoryMovementsCollection);
-                    transaction.set(movementDocRef, {
-                        orderId: orderDocRef.id,
-                        invoiceNumber: formattedInvoiceNumber,
-                        productId: productDoc.id,
-                        type: 'SALIDA',
-                        quantity: -cartItem.quantity,
-                        reason: `Venta - Orden #${formattedInvoiceNumber}`,
-                        previousStock: productData.stock,
-                        newStock,
-                        createdAt: serverTimestamp(),
-                        userId, 
-                        userEmail: userEmail,
+                    movementWrites.push({
+                        ref: movementDocRef,
+                        data: {
+                            orderId: orderDocRef.id,
+                            invoiceNumber: formattedInvoiceNumber,
+                            productId: productDoc.id,
+                            type: 'SALIDA',
+                            quantity: -requestedQty,
+                            reason: `Venta - Orden #${formattedInvoiceNumber}`,
+                            previousStock: currentProdStock,
+                            newStock,
+                            createdAt: serverTimestamp(),
+                            userId, 
+                            userEmail: finalUserEmail,
+                        }
                     });
                 }
             }
@@ -206,21 +226,35 @@ export const createOrder = async ({ userId, userName, userEmail, items, subtotal
             const orderData = {
                 invoiceNumber: formattedInvoiceNumber,
                 userId,
-                userName: userData.name || userName,
-                userEmail,
+                userName: finalUserName,
+                userEmail: finalUserEmail,
                 whatsapp: userData.whatsapp || '',
                 locationUrl: userData.locationUrl || '',
                 items: orderItems,
-                subtotal,
-                deliveryFee: deliveryFee || 0,
-                total,
+                subtotal: Number(subtotal) || 0,
+                deliveryFee: Number(deliveryFee) || 0,
+                total: Number(total) || 0,
                 paymentMethod: paymentMethodToStore,
-                paymentReceiptUrl,
-                paymentReference: paymentReference || null, // Store the payment reference
-                status: paymentReceiptUrl ? 'Verificar Pago' : 'Pendiente de Pago',
+                paymentReceiptUrl: finalPaymentReceiptUrl,
+                paymentReference: finalPaymentRef,
+                status: finalPaymentReceiptUrl ? 'Verificar Pago' : 'Pendiente de Pago',
                 createdAt: serverTimestamp(),
                 repartidorAsignadoId: null,
             };
+
+            // ── PHASE 3: ALL WRITES ─────────────────────────────────────────
+            transaction.set(counterDocRef, { 
+                lastInvoiceNumber: nextInvoiceNumber,
+                updatedAt: serverTimestamp() 
+            }, { merge: true });
+
+            for (const update of stockUpdates) {
+                transaction.update(update.ref, { stock: update.stock });
+            }
+
+            for (const movement of movementWrites) {
+                transaction.set(movement.ref, movement.data);
+            }
 
             transaction.set(orderDocRef, orderData);
         });

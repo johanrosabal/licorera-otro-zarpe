@@ -22,7 +22,12 @@ export const getHomepageSettings = async () => {
         if (docSnap.exists()) {
             return docSnap.data();
         }
-        return { deliveriesEnabled: true, siteName: 'OTRO ZARPE' }; // Default values
+        return { 
+            deliveriesEnabled: true, 
+            deliveryFeeType: 'distance', 
+            fixedDeliveryFee: 3000, 
+            siteName: 'OTRO ZARPE' 
+        }; // Default values
     } catch (error) {
         logError(error, 'getHomepageSettings');
         throw error;
@@ -43,6 +48,8 @@ export const updateHomepageSettings = async (data) => {
         if (data.deliveryOriginLat !== undefined) settingsToUpdate.deliveryOriginLat = data.deliveryOriginLat;
         if (data.deliveryOriginLng !== undefined) settingsToUpdate.deliveryOriginLng = data.deliveryOriginLng;
         if (data.deliveriesEnabled !== undefined) settingsToUpdate.deliveriesEnabled = data.deliveriesEnabled;
+        if (data.deliveryFeeType !== undefined) settingsToUpdate.deliveryFeeType = data.deliveryFeeType;
+        if (data.fixedDeliveryFee !== undefined) settingsToUpdate.fixedDeliveryFee = data.fixedDeliveryFee;
         if (data.storeLocationUrl !== undefined) settingsToUpdate.storeLocationUrl = data.storeLocationUrl;
         if (data.siteName !== undefined) settingsToUpdate.siteName = data.siteName;
         if (data.siteSlogan !== undefined) settingsToUpdate.siteSlogan = data.siteSlogan;

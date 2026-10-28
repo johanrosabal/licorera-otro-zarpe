@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { getSuppliers, addSupplier, updateSupplier, deleteSupplier } from '@/lib/suppliers';
-import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Phone, Mail, User, MapPin, Search } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Edit, MoreVertical, Phone, Mail, User, MapPin, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -206,6 +206,39 @@ export default function AdminSuppliersPage() {
     });
   }, [suppliers, searchTerm]);
 
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const sortedSuppliers = useMemo(() => {
+    if (!sortConfig.key) return filteredSuppliers;
+    return [...filteredSuppliers].sort((a, b) => {
+      let valA, valB;
+      if (sortConfig.key === 'name') {
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+      } else if (sortConfig.key === 'contact') {
+        valA = (a.contactPerson || a.phone || a.email || '').toLowerCase();
+        valB = (b.contactPerson || b.phone || b.email || '').toLowerCase();
+      } else if (sortConfig.key === 'active') {
+        valA = a.active ? 1 : 0;
+        valB = b.active ? 1 : 0;
+      } else {
+        valA = a[sortConfig.key] ?? '';
+        valB = b[sortConfig.key] ?? '';
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredSuppliers, sortConfig]);
+
   const handleToggleActive = async (supplier) => {
     try {
         await updateSupplier(supplier.id, { active: !supplier.active });
@@ -288,10 +321,46 @@ export default function AdminSuppliersPage() {
             <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Contacto</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead 
+                    className="cursor-pointer select-none hover:text-primary transition-colors"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>Nombre</span>
+                      {sortConfig.key === 'name' ? (
+                        sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                      ) : (
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer select-none hover:text-primary transition-colors"
+                    onClick={() => handleSort('contact')}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>Contacto</span>
+                      {sortConfig.key === 'contact' ? (
+                        sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                      ) : (
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="cursor-pointer select-none hover:text-primary transition-colors"
+                    onClick={() => handleSort('active')}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>Estado</span>
+                      {sortConfig.key === 'active' ? (
+                        sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                      ) : (
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-right font-bold">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -301,8 +370,8 @@ export default function AdminSuppliersPage() {
                       <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                     </TableCell>
                   </TableRow>
-                ) : filteredSuppliers.length > 0 ? (
-                  filteredSuppliers.map((supplier) => (
+                ) : sortedSuppliers.length > 0 ? (
+                  sortedSuppliers.map((supplier) => (
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">{supplier.name}</TableCell>
                       <TableCell>
@@ -358,8 +427,8 @@ export default function AdminSuppliersPage() {
                 <div className="flex justify-center items-center h-48">
                   <Loader2 className="mx-auto animate-spin text-primary h-10 w-10" />
                 </div>
-              ) : filteredSuppliers.length > 0 ? (
-                filteredSuppliers.map((supplier) => (
+              ) : sortedSuppliers.length > 0 ? (
+                sortedSuppliers.map((supplier) => (
                   <Card key={supplier.id} className="p-4">
                       <div className="flex justify-between items-start mb-4">
                         <div>

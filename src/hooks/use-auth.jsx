@@ -10,8 +10,8 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import Image from 'next/image';
 import { BrandLogo } from '@/components/brand-logo';
+import { usePathname } from 'next/navigation';
 
 const AuthContext = createContext({
   user: null,
@@ -25,27 +25,23 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [siteName, setSiteName] = useState(process.env.NEXT_PUBLIC_APP_NAME || 'MI TIENDA');
   const [siteSlogan, setSiteSlogan] = useState(process.env.NEXT_PUBLIC_APP_SLOGAN || 'LICORERA EXCLUSIVA');
-  const [imagesLoaded, setImagesLoaded] = useState(false);
-  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setMinTimeElapsed(true);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    // Wait for all assets (including images) to load
-    const handleLoad = () => setImagesLoaded(true);
-
-    if (document.readyState === 'complete') {
-      setImagesLoaded(true);
-    } else {
-      window.addEventListener('load', handleLoad);
-      return () => window.removeEventListener('load', handleLoad);
+    // Only show splash on the home page ('/') and only once per session
+    if (pathname === '/') {
+      const hasSeen = typeof window !== 'undefined' ? sessionStorage.getItem('has_seen_splash') : 'true';
+      if (!hasSeen) {
+        setShowSplash(true);
+        sessionStorage.setItem('has_seen_splash', 'true');
+        const timer = setTimeout(() => {
+          setShowSplash(false);
+        }, 2500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     let unsubSnapshot = null;
@@ -59,6 +55,7 @@ export const AuthProvider = ({ children }) => {
 
       if (firebaseUser) {
         const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const isGoogle = firebaseUser.providerData?.some(p => p.providerId === 'google.com') || false;
         
         unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -67,10 +64,11 @@ export const AuthProvider = ({ children }) => {
               uid: firebaseUser.uid,
               email: firebaseUser.email,
               name: userData.name || firebaseUser.displayName,
-              whatsapp: userData.whatsapp,
+              whatsapp: userData.whatsapp || '',
               photoURL: firebaseUser.photoURL,
               role: userData.role || 'CLIENT',
               locationUrl: userData.locationUrl,
+              isGoogle,
             });
           } else {
             setUser({
@@ -78,9 +76,10 @@ export const AuthProvider = ({ children }) => {
               email: firebaseUser.email,
               name: firebaseUser.displayName,
               photoURL: firebaseUser.photoURL,
-              whatsapp: null,
+              whatsapp: '',
               role: 'CLIENT',
               locationUrl: null,
+              isGoogle,
             });
           }
           setLoading(false);
@@ -97,9 +96,10 @@ export const AuthProvider = ({ children }) => {
                     email: firebaseUser.email,
                     name: firebaseUser.displayName,
                     photoURL: firebaseUser.photoURL,
-                    whatsapp: null,
+                    whatsapp: '',
                     role: 'CLIENT',
                     locationUrl: null,
+                    isGoogle,
                 });
             }
             setLoading(false);
@@ -130,16 +130,17 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {loading || !imagesLoaded || !minTimeElapsed ? (
-        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background">
-            <div className="animate-blur-in flex flex-col items-center w-full max-w-md px-8">
-                <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isSplash />
-                <p className="mt-8 text-lg text-muted-foreground animate-pulse">Bienvenidos a la experiencia en Línea</p>
-            </div>
+      {showSplash && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background pointer-events-none transition-opacity duration-500">
+          <div className="animate-blur-in flex flex-col items-center w-full max-w-xl px-4">
+            <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isSplash />
+            <p className="mt-8 text-lg text-muted-foreground animate-pulse text-center">
+              Bienvenidos a la experiencia en Línea
+            </p>
+          </div>
         </div>
-      ) : (
-        children
       )}
+      {children}
     </AuthContext.Provider>
   );
 };

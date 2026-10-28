@@ -16,7 +16,7 @@ import { updateProfile } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { extractCoordsFromUrl } from '@/lib/utils';
+import { extractCoordsFromUrl, formatPhoneNumber } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 
 const profileSchema = z.object({
@@ -100,7 +100,20 @@ export default function ProfilePage() {
                 )}/>
                 <div className="space-y-2"><FormLabel>Email</FormLabel><Input value={user.email} disabled className="bg-muted"/></div>
                 <FormField control={form.control} name="whatsapp" render={({ field }) => (
-                  <FormItem><FormLabel>WhatsApp</FormLabel><FormControl><Input type="tel" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>Número de Teléfono (WhatsApp)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="tel" 
+                        placeholder="(506) 0000 0000" 
+                        {...field} 
+                        value={field.value || ''} 
+                        onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
+                        maxLength={15}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}/>
                 <div className="space-y-4">
                     <Label>Ubicación de Entrega</Label>

@@ -107,7 +107,11 @@ export default function AdminDashboardPage() {
 
         const ordersCol = collection(db, 'orders');
         const unsubOrders = onSnapshot(query(ordersCol, orderBy('createdAt', 'desc')), (snapshot) => {
-            orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt.toDate() }));
+            orders = snapshot.docs.map(doc => {
+                const data = doc.data();
+                const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000) : new Date());
+                return { id: doc.id, ...data, createdAt: createdAtDate };
+            });
             ordersLoaded = true;
             checkAndProcessData();
         }, async (error) => {

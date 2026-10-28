@@ -74,33 +74,112 @@ export const formatSinpeMovil = (value) => {
     return truncatedDigits;
 };
 
-export const extractCoordsFromUrl = (url) => {
-    if (!url || typeof url !== 'string') return null;
+/**
+ * Formatea un número de teléfono con el formato de Costa Rica: (506) 0000 0000
+ * @param {string} val
+ * @returns {string} Teléfono formateado
+ */
+export function formatPhoneNumber(val) {
+  if (!val) return '';
+  if (val === '(506)' || val === '(506' || val === '(50' || val === '(' || val === '(5') {
+    return '';
+  }
+  const digits = val.replace(/\D/g, '');
+  if (!digits) return '';
 
+  if (digits === '506') {
+    return val.endsWith(' ') ? '(506) ' : '';
+  }
+
+  let num = digits;
+  if (digits.startsWith('506') && digits.length > 3) {
+    num = digits.slice(3);
+  }
+
+  num = num.slice(0, 8);
+  if (!num) return '';
+
+  if (num.length <= 4) {
+    return `(506) ${num}`;
+  }
+  return `(506) ${num.slice(0, 4)} ${num.slice(4)}`;
+}
+
+/**
+ * Extrae latitud y longitud desde cualquier entrada:
+ * - Links de Google Maps (place, @lat,lng, !3d/!4d, maps.app.goo.gl, search)
+ * - Links de WhatsApp (maps.google.com/?q=..., loc:lat,lng)
+ * - Links de Waze o Apple Maps (?ll=lat,lng o ?daddr=lat,lng)
+ * - Coordenadas en texto plano: "10.008151, -84.122928"
+ * - Coordenadas DMS: 10°00'29.3"N 84°07'22.5"W
+ * 
+ * @param {string} input - URL o texto con coordenadas
+ * @returns {{ lat: number, lng: number } | null}
+ */
+export const extractCoordsFromUrl = (input) => {
+    if (!input || typeof input !== 'string') return null;
+
+    let text = input.trim();
+    if (!text) return null;
+
+    // Decodificar entidades URL si están codificadas (%C2%B0, %22, %20, etc.)
     try {
-        const urlObj = new URL(url);
-        // For google.com/maps?q=lat,lng
-        const q = urlObj.searchParams.get('q');
-        if (q) {
-            const [lat, lng] = q.split(',').map(s => s.trim());
-            if (!isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng))) {
-                return { lat: parseFloat(lat), lng: parseFloat(lng) };
-            }
+        text = decodeURIComponent(text);
+    } catch (_) {}
+
+    // 1. Google Maps pinned marker: !3d<lat> y !4d<lng>
+    const latMatch = text.match(/!3d(-?\d+(?:\.\d+)?)/);
+    const lngMatch = text.match(/!4d(-?\d+(?:\.\d+)?)/);
+    if (latMatch && lngMatch) {
+        const lat = parseFloat(latMatch[1]);
+        const lng = parseFloat(lngMatch[1]);
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat, lng };
         }
-        
-        // For google.com/maps/place/.../@lat,lng,zoom
-        const pathParts = urlObj.pathname.split('/');
-        const atPart = pathParts.find(part => part.startsWith('@'));
-        if (atPart) {
-            const [lat, lng] = atPart.substring(1).split(',').map(s => s.trim());
-             if (!isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng))) {
-                return { lat: parseFloat(lat), lng: parseFloat(lng) };
-            }
-        }
-    } catch (error) {
-        // Not a valid URL, ignore
     }
-    
+
+    // 2. Google Maps viewport/coordenadas con @lat,lng
+    const atMatch = text.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+    if (atMatch) {
+        const lat = parseFloat(atMatch[1]);
+        const lng = parseFloat(atMatch[2]);
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat, lng };
+        }
+    }
+
+    // 3. Parámetros de consulta: q=lat,lng, query=lat,lng, ll=lat,lng, daddr=lat,lng (incluye WhatsApp loc:lat,lng)
+    const queryMatch = text.match(/[?&](?:q|query|ll|daddr|saddr|destination)=(?:loc:)?(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/i);
+    if (queryMatch) {
+        const lat = parseFloat(queryMatch[1]);
+        const lng = parseFloat(queryMatch[2]);
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat, lng };
+        }
+    }
+
+    // 4. Formato DMS (Grados, Minutos, Segundos): ej. 10°00'29.3"N 84°07'22.5"W
+    const dmsMatch = text.match(/(\d{1,2})[°\s]+(\d{1,2})['\s]+(\d+(?:\.\d+)?)["\s]*([NSns])[,\s+]+(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d+(?:\.\d+)?)["\s]*([EWew])/);
+    if (dmsMatch) {
+        const latDeg = parseFloat(dmsMatch[1]) + parseFloat(dmsMatch[2]) / 60 + parseFloat(dmsMatch[3]) / 3600;
+        const lat = dmsMatch[4].toUpperCase() === 'S' ? -latDeg : latDeg;
+        const lngDeg = parseFloat(dmsMatch[5]) + parseFloat(dmsMatch[6]) / 60 + parseFloat(dmsMatch[7]) / 3600;
+        const lng = dmsMatch[8].toUpperCase() === 'W' ? -lngDeg : lngDeg;
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
+        }
+    }
+
+    // 5. Coordenadas decimales directas en texto: ej. "10.008151, -84.122928"
+    const pairMatch = text.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+    if (pairMatch) {
+        const lat = parseFloat(pairMatch[1]);
+        const lng = parseFloat(pairMatch[2]);
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat, lng };
+        }
+    }
+
     return null;
 };
 

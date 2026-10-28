@@ -267,7 +267,7 @@ export default function MyOrdersPage() {
         });
 
         if (user.role !== 'CLIENT') {
-            getUsers({ roles: ['REPARTIDOR', 'ADMIN'] })
+            getUsers({ roles: ['DELIVERY', 'REPARTIDOR', 'ADMIN'] })
                 .then(setDeliveryUsers)
                 .catch(err => console.error("Could not fetch delivery users", err));
         }

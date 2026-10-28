@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     function isRepartidor() {
-      return isSignedIn() && getUserRole() == 'REPARTIDOR';
+      return isSignedIn() && (getUserRole() == 'REPARTIDOR' || getUserRole() == 'DELIVERY');
     }
 
     // ─── PUBLIC CATALOG (no auth required) ──────────────────────────────────
@@ -31,20 +31,23 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       // Allow users to update stock during checkout transaction
       allow update: if isAdmin() || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'updatedAt', 'updatedBy']));
+    }
 
-      // Reviews: anyone can read; authenticated users can submit
-      match /reviews/{reviewId} {
-        allow read: if true;
-        allow create: if isSignedIn()
-          && request.resource.data.userId == request.auth.uid;
-        allow update, delete: if isAdmin();
-      }
+    // Reviews: subcollection of products, queried directly and via collectionGroup
+    match /{path=**}/reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     // Categories, Brands, Settings, Notifications: public read; admin write
     match /categories/{categoryId} { allow read: if true; allow write: if isAdmin(); }
     match /brands/{brandId} { allow read: if true; allow write: if isAdmin(); }
-    match /settings/{document} { allow read: if true; allow write: if isAdmin(); }
+    match /settings/{document} { 
+      allow read: if true; 
+      allow write: if isAdmin() || (isSignedIn() && document == 'orderCounter'); 
+    }
     match /notifications/{notificationId} { allow read: if true; allow write: if isAdmin(); }
     
     // System Error Logs
@@ -55,13 +58,14 @@ service cloud.firestore {
 
     // ─── AUTHENTICATED USERS ─────────────────────────────────────────────────
 
-    // Users: each user reads/updates their own doc; admins can read/update all
-    // Clients can 'get' other users (to see delivery person names) but not list them all.
+    // Users: each user reads their own doc; admins can read/list all
+    // Clients can 'get' user profiles (to see delivery person names) but not list all.
+    // SECURED: Regular users CANNOT assign themselves 'ADMIN' role or change their role/email/authUID.
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == 'CLIENT');
+      allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'email', 'authUID']));
       allow delete: if isAdmin();
 
       match /favorites/{productId} {
@@ -73,12 +77,10 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // Orders: authenticated users can read to calculate next invoice number;
-    // only owners/admins can read full details (usually handled by app logic, but rules should be safe)
-    // For now, allow read to all signed in users to fix the checkout block.
+    // Orders: SECURED. Customers can ONLY read their own orders. Admins and Repartidores read all.
     match /orders/{orderId} {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow read: if isSignedIn();
+      allow read: if isAdmin() || isRepartidor() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow update: if isAdmin() || (isRepartidor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['repartidorAsignadoId', 'status']));
       allow delete: if isAdmin();
     }

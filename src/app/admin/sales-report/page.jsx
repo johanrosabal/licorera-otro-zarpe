@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, DollarSign, ShoppingCart, Percent, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, DollarSign, ShoppingCart, Percent, Calendar as CalendarIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
 import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -127,6 +127,39 @@ export default function SalesReportPage() {
         });
         return Array.from(productMap.values()).sort((a, b) => b.quantitySold - a.quantitySold);
     }, [filteredOrders]);
+
+    const [sortConfig, setSortConfig] = useState({ key: 'quantitySold', direction: 'desc' });
+
+    const handleSort = (key) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    const sortedProducts = useMemo(() => {
+        if (!sortConfig.key) return topProducts;
+        return [...topProducts].sort((a, b) => {
+            let valA, valB;
+            if (sortConfig.key === 'name') {
+                valA = (a.name || '').toLowerCase();
+                valB = (b.name || '').toLowerCase();
+            } else if (sortConfig.key === 'quantitySold') {
+                valA = Number(a.quantitySold) || 0;
+                valB = Number(b.quantitySold) || 0;
+            } else if (sortConfig.key === 'totalRevenue') {
+                valA = Number(a.totalRevenue) || 0;
+                valB = Number(b.totalRevenue) || 0;
+            } else {
+                valA = a[sortConfig.key] ?? '';
+                valB = b[sortConfig.key] ?? '';
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [topProducts, sortConfig]);
     
     const chartData = useMemo(() => {
         const data = filteredOrders.reduce((acc, order) => {
@@ -386,14 +419,50 @@ export default function SalesReportPage() {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead className="w-[80px]">#</TableHead>
-                                    <TableHead>Producto</TableHead>
-                                    <TableHead className="text-right">Unidades Vendidas</TableHead>
-                                    <TableHead className="text-right">Ingresos Generados</TableHead>
+                                    <TableHead 
+                                        className="cursor-pointer select-none hover:text-primary transition-colors"
+                                        onClick={() => handleSort('name')}
+                                    >
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                            <span>Producto</span>
+                                            {sortConfig.key === 'name' ? (
+                                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                            ) : (
+                                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                            )}
+                                        </div>
+                                    </TableHead>
+                                    <TableHead 
+                                        className="text-right cursor-pointer select-none hover:text-primary transition-colors"
+                                        onClick={() => handleSort('quantitySold')}
+                                    >
+                                        <div className="flex items-center justify-end gap-1.5 font-bold">
+                                            <span>Unidades Vendidas</span>
+                                            {sortConfig.key === 'quantitySold' ? (
+                                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                            ) : (
+                                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                            )}
+                                        </div>
+                                    </TableHead>
+                                    <TableHead 
+                                        className="text-right cursor-pointer select-none hover:text-primary transition-colors"
+                                        onClick={() => handleSort('totalRevenue')}
+                                    >
+                                        <div className="flex items-center justify-end gap-1.5 font-bold">
+                                            <span>Ingresos Generados</span>
+                                            {sortConfig.key === 'totalRevenue' ? (
+                                                sortConfig.direction === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                                            ) : (
+                                                <ArrowUpDown className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                                            )}
+                                        </div>
+                                    </TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {topProducts.length > 0 ? (
-                                    topProducts.map((product, index) => (
+                                {sortedProducts.length > 0 ? (
+                                    sortedProducts.map((product, index) => (
                                         <TableRow key={product.id}>
                                              <TableCell>{index + 1}</TableCell>
                                              <TableCell>

@@ -242,8 +242,71 @@ export function ProductForm({ product, onFinished }) {
     
     const alcoholGrades = Array.from({ length: 101 }, (_, i) => i);
     
-    const filteredCategories = categories.filter(category => category.name.toLowerCase().includes(categorySearchTerm.toLowerCase()));
-    const filteredBrands = brands.filter(brand => brand.name.toLowerCase().includes(brandSearchTerm.toLowerCase()));
+    const uniqueUnits = useMemo(() => {
+        const seen = new Set();
+        const result = [];
+        for (const unit of units) {
+            const name = unit?.name?.trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                result.push({ ...unit, name });
+            }
+        }
+        if (product?.unitOfMeasure?.trim() && !seen.has(product.unitOfMeasure.trim().toLowerCase())) {
+            result.unshift({ id: `legacy-${product.unitOfMeasure}`, name: product.unitOfMeasure.trim() });
+        }
+        return result;
+    }, [units, product?.unitOfMeasure]);
+
+    const uniqueCategories = useMemo(() => {
+        const seen = new Set();
+        const result = [];
+        for (const cat of categories) {
+            const name = cat?.name?.trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                result.push({ ...cat, name });
+            }
+        }
+        if (product?.category?.trim() && !seen.has(product.category.trim().toLowerCase())) {
+            result.unshift({ id: `legacy-${product.category}`, name: product.category.trim() });
+        }
+        return result;
+    }, [categories, product?.category]);
+
+    const filteredCategories = useMemo(() => {
+        if (!categorySearchTerm.trim()) return uniqueCategories;
+        const term = categorySearchTerm.toLowerCase().trim();
+        return uniqueCategories.filter(category => category.name.toLowerCase().includes(term));
+    }, [uniqueCategories, categorySearchTerm]);
+
+    const uniqueBrands = useMemo(() => {
+        const seen = new Set();
+        const result = [];
+        for (const brand of brands) {
+            const name = brand?.name?.trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                result.push({ ...brand, name });
+            }
+        }
+        if (product?.brand?.trim() && !seen.has(product.brand.trim().toLowerCase())) {
+            result.unshift({ id: `legacy-${product.brand}`, name: product.brand.trim() });
+        }
+        return result;
+    }, [brands, product?.brand]);
+
+    const filteredBrands = useMemo(() => {
+        if (!brandSearchTerm.trim()) return uniqueBrands;
+        const term = brandSearchTerm.toLowerCase().trim();
+        return uniqueBrands.filter(brand => brand.name.toLowerCase().includes(term));
+    }, [uniqueBrands, brandSearchTerm]);
     const filteredBundleProducts = useMemo(() => {
         return allProducts.filter(p => p.name.toLowerCase().includes(bundleProductSearch.toLowerCase()) && p.isBundle !== true);
     }, [allProducts, bundleProductSearch]);
@@ -427,7 +490,7 @@ export function ProductForm({ product, onFinished }) {
                       </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                          {units.map(unit => (
+                          {uniqueUnits.map(unit => (
                             <SelectItem key={unit.id} value={unit.name}>
                                 {unit.name}
                             </SelectItem>
@@ -462,6 +525,7 @@ export function ProductForm({ product, onFinished }) {
                                             className="pl-9 h-9"
                                             value={categorySearchTerm}
                                             onChange={(e) => setCategorySearchTerm(e.target.value)}
+                                            onKeyDown={(e) => e.stopPropagation()}
                                         />
                                     </div>
                                 </div>
@@ -497,6 +561,7 @@ export function ProductForm({ product, onFinished }) {
                                             className="pl-9 h-9"
                                             value={brandSearchTerm}
                                             onChange={(e) => setBrandSearchTerm(e.target.value)}
+                                            onKeyDown={(e) => e.stopPropagation()}
                                         />
                                     </div>
                                 </div>

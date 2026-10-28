@@ -6,9 +6,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Search, FilterX, TrendingUp, DollarSign, Package, BadgePercent } from 'lucide-react';
+import { Loader2, Search, FilterX, TrendingUp, DollarSign, Package, BadgePercent, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { AuthorizedOnly } from '@/components/auth/authorized-only';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +35,29 @@ export default function SalesProjectionPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [siteName, setSiteName] = useState('OTRO ZARPE');
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key === key) {
+      return sortConfig.direction === 'asc' ? (
+        <ArrowUp className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      ) : (
+        <ArrowDown className="h-4 w-4 ml-1 text-primary shrink-0 transition-transform" />
+      );
+    }
+    return (
+      <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    );
+  };
 
   useEffect(() => {
     getHomepageSettings().then(settings => {
@@ -72,6 +95,36 @@ export default function SalesProjectionPage() {
       unsubBrands();
     };
   }, [toast]);
+
+  const uniqueCategories = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const c of categories) {
+      const name = c?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...c, name });
+      }
+    }
+    return result;
+  }, [categories]);
+
+  const uniqueBrands = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const b of brands) {
+      const name = b?.name?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ ...b, name });
+      }
+    }
+    return result;
+  }, [brands]);
   
   const saleableProducts = useMemo(() => {
     return products.filter(p => p.active && !p.internalOnly && p.stock > 0);
@@ -79,7 +132,7 @@ export default function SalesProjectionPage() {
 
 
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    const list = products.filter(product => {
       const searchTermLower = searchTerm.toLowerCase();
       
       const searchMatch = searchTerm === '' ||
@@ -90,7 +143,59 @@ export default function SalesProjectionPage() {
 
       return searchMatch && categoryMatch && brandMatch;
     });
-  }, [products, searchTerm, selectedCategory, selectedBrand]);
+
+    if (!sortConfig.key) return list;
+
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+      const costA = a.costPrice || 0;
+      const sellingA = a.sellingPrice || 0;
+      const stockA = a.stock || 0;
+      const totalCostA = costA * stockA;
+      const totalSellA = sellingA * stockA;
+      const profitA = totalSellA - totalCostA;
+      const marginA = sellingA > 0 ? ((sellingA - costA) / sellingA) * 100 : 0;
+
+      const costB = b.costPrice || 0;
+      const sellingB = b.sellingPrice || 0;
+      const stockB = b.stock || 0;
+      const totalCostB = costB * stockB;
+      const totalSellB = sellingB * stockB;
+      const profitB = totalSellB - totalCostB;
+      const marginB = sellingB > 0 ? ((sellingB - costB) / sellingB) * 100 : 0;
+
+      switch (sortConfig.key) {
+        case 'name':
+          comparison = (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base', numeric: true });
+          break;
+        case 'stock':
+          comparison = stockA - stockB;
+          break;
+        case 'costPrice':
+          comparison = costA - costB;
+          break;
+        case 'sellingPrice':
+          comparison = sellingA - sellingB;
+          break;
+        case 'totalCostValue':
+          comparison = totalCostA - totalCostB;
+          break;
+        case 'totalSellValue':
+          comparison = totalSellA - totalSellB;
+          break;
+        case 'profit':
+          comparison = profitA - profitB;
+          break;
+        case 'margin':
+          comparison = marginA - marginB;
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [products, searchTerm, selectedCategory, selectedBrand, sortConfig]);
 
   const totals = useMemo(() => {
     return saleableProducts.reduce((acc, product) => {
@@ -289,7 +394,7 @@ export default function SalesProjectionPage() {
                       <SelectTrigger><SelectValue placeholder="Categoría" /></SelectTrigger>
                       <SelectContent>
                           <SelectItem value="all">Todas las categorías</SelectItem>
-                          {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                          {uniqueCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <div className="flex gap-2">
@@ -297,7 +402,7 @@ export default function SalesProjectionPage() {
                         <SelectTrigger><SelectValue placeholder="Marca" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Todas las marcas</SelectItem>
-                            {brands.map(b => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
+                            {uniqueBrands.map(b => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
                         </SelectContent>
                         </Select>
                         <Button variant="ghost" onClick={resetFilters} className="h-10">
@@ -312,14 +417,110 @@ export default function SalesProjectionPage() {
             <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">Costo Unit.</TableHead>
-                  <TableHead className="text-right">Venta Unit.</TableHead>
-                  <TableHead className="text-right">Valor Costo Total</TableHead>
-                  <TableHead className="text-right">Valor Venta Total</TableHead>
-                  <TableHead className="text-right">Ganancia Proyectada</TableHead>
-                   <TableHead className="text-right">Margen</TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors",
+                      sortConfig.key === 'name' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('name')}
+                    title="Ordenar por Producto"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Producto</span>
+                      {renderSortIcon('name')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'stock' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('stock')}
+                    title="Ordenar por Stock"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Stock</span>
+                      {renderSortIcon('stock')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'costPrice' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('costPrice')}
+                    title="Ordenar por Costo Unitario"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Costo Unit.</span>
+                      {renderSortIcon('costPrice')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'sellingPrice' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('sellingPrice')}
+                    title="Ordenar por Venta Unitaria"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Venta Unit.</span>
+                      {renderSortIcon('sellingPrice')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'totalCostValue' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('totalCostValue')}
+                    title="Ordenar por Valor Costo Total"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Valor Costo Total</span>
+                      {renderSortIcon('totalCostValue')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'totalSellValue' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('totalSellValue')}
+                    title="Ordenar por Valor Venta Total"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Valor Venta Total</span>
+                      {renderSortIcon('totalSellValue')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'profit' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('profit')}
+                    title="Ordenar por Ganancia Proyectada"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Ganancia Proyectada</span>
+                      {renderSortIcon('profit')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className={cn(
+                      "cursor-pointer select-none group transition-colors text-right",
+                      sortConfig.key === 'margin' ? "text-primary font-bold" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleSort('margin')}
+                    title="Ordenar por Margen"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Margen</span>
+                      {renderSortIcon('margin')}
+                    </div>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
