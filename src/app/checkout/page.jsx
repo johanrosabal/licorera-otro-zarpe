@@ -47,7 +47,7 @@ import dynamic from 'next/dynamic';
 
 // Dynamically import map component for SSR compatibility
 const LocationPicker = dynamic(
-  () => import('@/components/location-picker').then((mod) => mod.LocationPicker),
+  () => import('@/components/location-picker'),
   { 
     ssr: false,
     loading: () => <div className="h-[400px] w-full bg-muted animate-pulse flex items-center justify-center font-bold text-muted-foreground uppercase tracking-widest">CARGANDO MAPA...</div>
@@ -91,8 +91,10 @@ export default function CheckoutPage() {
     useEffect(() => {
         if (!authLoading && isCartInitialized && !orderPlaced) {
             if (!user) {
-                router.replace('/login?redirect=/checkout');
-            } else if (cartItems.length === 0) {
+                router.replace('/login?redirect=/checkout/');
+                return;
+            }
+            if (cartItems.length === 0) {
                 // If there's a guest cart currently being merged from localStorage, do not redirect
                 const storedCart = typeof window !== 'undefined' ? localStorage.getItem('cart') : null;
                 if (storedCart) {
@@ -103,8 +105,14 @@ export default function CheckoutPage() {
                         }
                     } catch (e) {}
                 }
-                toast({ title: "Tu carrito está vacío" });
-                router.replace('/products');
+                // Short safety timer to allow Firestore snapshot to settle without jarring bounce
+                const timer = setTimeout(() => {
+                    if (cartItems.length === 0) {
+                        toast({ title: "Tu carrito está vacío" });
+                        router.replace('/products');
+                    }
+                }, 800);
+                return () => clearTimeout(timer);
             }
         }
     }, [user, authLoading, cartItems.length, router, toast, isCartInitialized, orderPlaced]);
@@ -122,9 +130,10 @@ export default function CheckoutPage() {
             try {
                 const errors = [];
                 for (const item of cartItems) {
-                    const productSnap = await getDoc(doc(db, 'products', item.id));
+                    if (!item || !item.id) continue;
+                    const productSnap = await getDoc(doc(db, 'products', String(item.id)));
                     if (!productSnap.exists()) {
-                        errors.push({ id: item.id, message: `"${item.name}" ya no existe en el catálogo.` });
+                        errors.push({ id: item.id, message: `"${item.name || 'Producto'}" ya no existe en el catálogo.` });
                     } else {
                         const productData = productSnap.data();
                         if (productData.isBundle && productData.bundleItems && productData.bundleItems.length > 0) {
@@ -167,58 +176,81 @@ export default function CheckoutPage() {
     }, [cartItems]);
 
     useEffect(() => {
+        let isMounted = true;
         async function fetchInitialData() {
-            if(user && isCartInitialized && cartItems.length > 0) {
-                try {
-                    const [methods, fees, settings] = await Promise.all([
-                        getPaymentMethodsWithAccounts({ activeOnly: true }),
-                        getDeliveryFees(),
-                        getHomepageSettings(),
-                    ]);
+            if (!isCartInitialized || authLoading) return;
 
-                    setPaymentMethods(methods);
-                    if (methods.length > 0) setSelectedPaymentMethodId(methods[0].id);
+            if (!user || cartItems.length === 0) {
+                if (isMounted) setLoading(false);
+                return;
+            }
 
-                    if (settings?.whatsappUrl) {
-                        setWhatsappUrl(settings.whatsappUrl);
-                    }
+            try {
+                const [methodsResult, feesResult, settingsResult] = await Promise.allSettled([
+                    getPaymentMethodsWithAccounts({ activeOnly: true }),
+                    getDeliveryFees(),
+                    getHomepageSettings(),
+                ]);
 
-                    const isDeliveryOn = settings?.deliveriesEnabled !== false;
-                    setDeliveriesEnabled(isDeliveryOn);
+                if (!isMounted) return;
 
-                    const feeType = settings?.deliveryFeeType || 'distance';
-                    const fixedAmount = Number(settings?.fixedDeliveryFee ?? 3000);
-                    setDeliveryFeeType(feeType);
+                const methods = methodsResult.status === 'fulfilled' && Array.isArray(methodsResult.value) 
+                    ? methodsResult.value 
+                    : [];
+                const fees = feesResult.status === 'fulfilled' && Array.isArray(feesResult.value) 
+                    ? feesResult.value 
+                    : [];
+                const settings = settingsResult.status === 'fulfilled' && settingsResult.value 
+                    ? settingsResult.value 
+                    : {};
 
-                    const userCoords = extractCoordsFromUrl(currentUser?.locationUrl);
-                    const storeCoords = settings?.deliveryOriginLat && settings?.deliveryOriginLng ? { lat: settings.deliveryOriginLat, lng: settings.deliveryOriginLng } : null;
+                setPaymentMethods(methods);
+                if (methods.length > 0) {
+                    setSelectedPaymentMethodId(prev => prev || methods[0].id);
+                }
 
-                    if (!isDeliveryOn) {
-                        setDeliveryFee(0);
-                        setDistance(null);
-                    } else if (feeType === 'fixed') {
+                if (settings?.whatsappUrl) {
+                    setWhatsappUrl(settings.whatsappUrl);
+                }
+
+                const isDeliveryOn = settings?.deliveriesEnabled !== false;
+                setDeliveriesEnabled(isDeliveryOn);
+
+                const feeType = settings?.deliveryFeeType || 'distance';
+                const fixedAmount = Number(settings?.fixedDeliveryFee ?? 3000);
+                setDeliveryFeeType(feeType);
+
+                const userCoords = extractCoordsFromUrl(currentUser?.locationUrl);
+                const storeCoords = settings?.deliveryOriginLat && settings?.deliveryOriginLng 
+                    ? { lat: Number(settings.deliveryOriginLat), lng: Number(settings.deliveryOriginLng) } 
+                    : null;
+
+                if (!isDeliveryOn) {
+                    setDeliveryFee(0);
+                    setDistance(null);
+                } else if (feeType === 'fixed') {
+                    setDeliveryFee(fixedAmount);
+                    setDistance(null);
+                } else {
+                    if (userCoords && storeCoords) {
+                        const calculatedDistance = calculateHaversineDistance(storeCoords.lat, storeCoords.lng, userCoords.lat, userCoords.lng);
+                        setDistance(calculatedDistance);
+                        const applicableFee = fees.find(fee => calculatedDistance >= fee.fromKm && calculatedDistance < fee.toKm);
+                        setDeliveryFee(applicableFee ? applicableFee.fee : fixedAmount);
+                    } else {
                         setDeliveryFee(fixedAmount);
                         setDistance(null);
-                    } else {
-                        if(userCoords && storeCoords) {
-                            const calculatedDistance = calculateHaversineDistance(storeCoords.lat, storeCoords.lng, userCoords.lat, userCoords.lng);
-                            setDistance(calculatedDistance);
-                            const applicableFee = fees.find(fee => calculatedDistance >= fee.fromKm && calculatedDistance < fee.toKm);
-                            setDeliveryFee(applicableFee ? applicableFee.fee : fixedAmount);
-                        } else {
-                            setDeliveryFee(fixedAmount);
-                            setDistance(null);
-                        }
                     }
-                } catch (error) {
-                    console.error("Fetch data error:", error);
-                } finally {
-                    setLoading(false);
                 }
+            } catch (error) {
+                console.error("Fetch data error:", error);
+            } finally {
+                if (isMounted) setLoading(false);
             }
         }
         fetchInitialData();
-    }, [user, isCartInitialized, cartItems.length, currentUser]);
+        return () => { isMounted = false; };
+    }, [user, isCartInitialized, cartItems.length, currentUser, authLoading]);
     
     useEffect(() => {
         if (paymentReceipt instanceof File) {
@@ -394,19 +426,19 @@ export default function CheckoutPage() {
     const locationCoords = extractCoordsFromUrl(currentUser?.locationUrl);
 
     return (
-        <div className="container mx-auto py-12 px-4">
+        <div className="container mx-auto py-6 sm:py-12 px-3 sm:px-4">
             {isProcessing && <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center z-50"><Loader2 className="h-16 w-16 animate-spin text-primary mb-4" /><p className="font-bold">Procesando orden...</p></div>}
-            <h1 className="text-3xl font-headline text-center mb-8">Finalizar Compra</h1>
-            <div className="flex flex-col lg:flex-row gap-8">
-                <div className="lg:w-2/3 space-y-8">
+            <h1 className="text-2xl sm:text-3xl font-headline text-center mb-6 sm:mb-8">Finalizar Compra</h1>
+            <div className="flex flex-col lg:flex-row gap-6 sm:gap-8">
+                <div className="lg:w-2/3 space-y-6 sm:space-y-8">
                     <Card className="border-primary/20 shadow-lg overflow-hidden">
-                        <CardHeader className="bg-primary/5 border-b border-primary/10">
-                            <CardTitle className="flex items-center gap-2">
-                                <MapPin className="text-primary" />
+                        <CardHeader className="bg-primary/5 border-b border-primary/10 p-4 sm:p-6">
+                            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                                <MapPin className="text-primary h-5 w-5" />
                                 Ubicación de Entrega
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-6 space-y-6">
+                        <CardContent className="p-3.5 sm:p-6 space-y-4 sm:space-y-6">
                             {!deliveriesEnabled && (
                                 <Alert className="bg-blue-50 border-blue-200 text-blue-800">
                                     <Truck className="h-4 w-4 text-blue-600" />
@@ -416,36 +448,36 @@ export default function CheckoutPage() {
                                 </Alert>
                             )}
 
-                            <div className="flex flex-col gap-6">
-                                <Alert className="bg-blue-50 border-blue-300 text-blue-900 shadow-sm">
-                                    <AlertTriangle className="h-5 w-5 text-blue-600" />
-                                    <AlertTitle className="font-black text-lg">¡IMPORTANTE!</AlertTitle>
-                                    <AlertDescription className="text-base">
+                            <div className="flex flex-col gap-4 sm:gap-6">
+                                <Alert className="bg-blue-50 border-blue-300 text-blue-900 shadow-sm p-3 sm:p-4">
+                                    <AlertTriangle className="h-5 w-5 text-blue-600 shrink-0" />
+                                    <AlertTitle className="font-black text-sm sm:text-base">¡IMPORTANTE!</AlertTitle>
+                                    <AlertDescription className="text-xs sm:text-sm">
                                         {deliveryFeeType === 'fixed'
                                             ? 'Para garantizar que su pedido llegue correctamente a su destino, verifique su ubicación en el mapa de abajo. Use el botón de GPS para centrarlo.'
                                             : 'Para garantizar que su pedido llegue correctamente y calcular su costo de envío, es VITAL que verifique su ubicación exacta en el mapa de abajo. Use el botón de GPS para centrarlo.'}
                                     </AlertDescription>
                                 </Alert>
 
-                                <div className="space-y-4">
+                                <div className="space-y-3 sm:space-y-4">
                                     <Button 
                                         onClick={handleUpdateLocation} 
                                         disabled={isLocating} 
                                         size="lg" 
-                                        className="w-full text-xl h-16 font-black shadow-xl bg-primary hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-95"
+                                        className="w-full text-sm sm:text-lg h-12 sm:h-14 font-black shadow-xl bg-primary hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-95"
                                     >
-                                        {isLocating ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : <MapPin className="mr-3 h-7 w-7" />}
+                                        {isLocating ? <Loader2 className="animate-spin mr-2 sm:mr-3 h-5 w-5 sm:h-6 sm:w-6" /> : <MapPin className="mr-2 sm:mr-3 h-5 w-5 sm:h-6 sm:w-6" />}
                                         {isLocating ? 'OBTENIENDO GPS...' : 'CENTRAR MAPA CON MI GPS'}
                                     </Button>
 
-                                    <div className="rounded-xl overflow-hidden border-2 border-primary/20 shadow-lg animate-in fade-in zoom-in duration-700">
-                                        <div className="bg-primary/5 p-3 border-b border-primary/10 flex justify-between items-center">
-                                            <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
-                                                <Map className="h-4 w-4" /> Selector de Ubicación
+                                    <div className="rounded-xl overflow-hidden border border-primary/20 shadow-md">
+                                        <div className="bg-primary/5 p-2.5 sm:p-3 border-b border-primary/10 flex justify-between items-center">
+                                            <h3 className="font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-2">
+                                                <Map className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Selector de Ubicación
                                             </h3>
                                             {locationCoords ? (
                                                 <Badge className="bg-green-100 text-green-700 border-green-200 gap-1 text-[10px]">
-                                                    <CheckCircle2 className="h-3 w-3" /> UBICACIÓN LISTA
+                                                    <CheckCircle2 className="h-3 w-3" /> LISTO
                                                 </Badge>
                                             ) : (
                                                 <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 gap-1 text-[10px]">
@@ -463,36 +495,45 @@ export default function CheckoutPage() {
                                 </div>
                             </div>
 
-
-
-                           <Separator />
-                           <div className="grid grid-cols-2 gap-4 text-sm">
-                               <div><Label className="text-muted-foreground font-bold uppercase text-[10px]">Cliente</Label><p className="font-black text-lg">{currentUser?.name}</p></div>
-                               <div><Label className="text-muted-foreground font-bold uppercase text-[10px]">WhatsApp</Label><p className="font-black text-lg">{currentUser?.whatsapp || '-'}</p></div>
-                           </div>
+                            <Separator />
+                            <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
+                                <div><Label className="text-muted-foreground font-bold uppercase text-[10px]">Cliente</Label><p className="font-black text-sm sm:text-lg truncate">{currentUser?.name}</p></div>
+                                <div><Label className="text-muted-foreground font-bold uppercase text-[10px]">WhatsApp</Label><p className="font-black text-sm sm:text-lg truncate">{currentUser?.whatsapp || '-'}</p></div>
+                            </div>
                         </CardContent>
                     </Card>
 
-                    <Card className="border-primary/20 shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><CreditCard className="text-primary" /> Método de Pago</CardTitle>
+                    <Card className="border-primary/20 shadow-lg overflow-hidden">
+                        <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4">
+                            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl"><CreditCard className="text-primary h-5 w-5" /> Método de Pago</CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <Tabs value={selectedPaymentMethodId} onValueChange={setSelectedPaymentMethodId} className="w-full">
-                                <TabsList className="grid w-full grid-cols-2 mb-4">
-                                    {paymentMethods.map(method => <TabsTrigger key={method.id} value={method.id} className="font-bold">{method.name}</TabsTrigger>)}
-                                </TabsList>
-                                {paymentMethods.map(method => (
-                                    <TabsContent key={method.id} value={method.id} className="bg-muted/30 p-6 rounded-xl border-2 border-primary/5 space-y-6">
+                        <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0">
+                            {paymentMethods.length === 0 ? (
+                                <div className="p-4 sm:p-6 text-center border-2 border-dashed rounded-xl bg-muted/40 space-y-2">
+                                    <CreditCard className="h-8 w-8 sm:h-10 sm:w-10 mx-auto text-muted-foreground/60" />
+                                    <p className="font-bold text-foreground text-sm sm:text-base">No hay métodos de pago activos disponibles.</p>
+                                    <p className="text-xs text-muted-foreground">Por favor contacta a la tienda por WhatsApp para coordinar tu pago.</p>
+                                </div>
+                            ) : (
+                                <Tabs value={selectedPaymentMethodId} onValueChange={setSelectedPaymentMethodId} className="w-full">
+                                    <TabsList className="grid w-full grid-cols-2 mb-3 sm:mb-4 h-auto p-1">
+                                        {paymentMethods.map(method => (
+                                            <TabsTrigger key={method.id} value={method.id} className="font-bold text-xs sm:text-sm py-2">
+                                                {method.name}
+                                            </TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                    {paymentMethods.map(method => (
+                                        <TabsContent key={method.id} value={method.id} className="bg-muted/30 p-3 sm:p-6 rounded-xl border border-primary/10 space-y-4 sm:space-y-6">
                                         
-                                        <div className="bg-muted p-4 rounded-xl text-center relative border border-border">
+                                        <div className="bg-muted p-3 sm:p-4 rounded-xl text-center relative border border-border">
                                             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">REFERENCIA ÚNICA PARA ESTE PAGO:</p>
-                                            <div className="flex flex-col items-center justify-center gap-3">
-                                                <p className="text-5xl font-black tracking-tight text-foreground">{paymentReference}</p>
+                                            <div className="flex flex-col items-center justify-center gap-2 sm:gap-3">
+                                                <p className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-foreground">{paymentReference}</p>
                                                 <Button 
                                                     variant="secondary" 
                                                     size="sm" 
-                                                    className="flex items-center gap-2 font-bold h-9" 
+                                                    className="flex items-center gap-2 font-bold h-8 sm:h-9 text-xs sm:text-sm" 
                                                     onClick={handleCopyReference}
                                                 >
                                                     {referenceCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
@@ -503,25 +544,25 @@ export default function CheckoutPage() {
                                         </div>
 
                                         {method.bankAccount ? (
-                                            <div className="text-center space-y-4 pt-4">
+                                            <div className="text-center space-y-3 sm:space-y-4 pt-2 sm:pt-4">
                                                 <div>
                                                     <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">TITULAR DE LA CUENTA</p>
-                                                    <p className="text-2xl font-black uppercase tracking-tight">{method.bankAccount.accountHolder}</p>
+                                                    <p className="text-lg sm:text-2xl font-black uppercase tracking-tight break-words px-2">{method.bankAccount.accountHolder}</p>
                                                 </div>
                                                 
-                                                <Separator className="my-4 opacity-50" />
+                                                <Separator className="my-3 sm:my-4 opacity-50" />
 
-                                                {method.name.toLowerCase().includes('sinpe') ? (
+                                                {(method.name || '').toLowerCase().includes('sinpe') ? (
                                                   method.bankAccount.sinpeMovil && (
-                                                    <div className="py-2">
-                                                        <p className="text-[10px] uppercase text-muted-foreground font-bold">NÚMERO SINPE MÓVIL</p>
-                                                        <p className="text-6xl font-mono font-black text-primary my-2 leading-none tracking-tighter">
+                                                    <div className="py-2 px-1">
+                                                        <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">NÚMERO SINPE MÓVIL</p>
+                                                        <p className="text-3xl sm:text-4xl md:text-5xl font-mono font-black text-primary my-2 leading-none tracking-tight sm:tracking-tighter whitespace-nowrap overflow-x-auto select-all">
                                                             {formatSinpeMovil(method.bankAccount.sinpeMovil)}
                                                         </p>
                                                         <Button 
                                                             variant="outline" 
                                                             size="sm" 
-                                                            className="flex items-center gap-2 mx-auto font-bold mt-2" 
+                                                            className="flex items-center gap-2 mx-auto font-bold mt-2 h-9 text-xs sm:text-sm" 
                                                             onClick={() => handleCopySinpe(method.bankAccount.sinpeMovil)}
                                                         >
                                                             {sinpeCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
@@ -531,16 +572,16 @@ export default function CheckoutPage() {
                                                   )
                                                 ) : (
                                                   method.bankAccount.iban && (
-                                                    <div className="space-y-4">
+                                                    <div className="space-y-3 sm:space-y-4">
                                                         <div>
                                                             <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">CUENTA IBAN</p>
-                                                            <p className="text-xl font-mono break-all font-black tracking-tighter text-foreground mb-3">
+                                                            <p className="text-sm sm:text-lg md:text-xl font-mono break-all font-black tracking-tight text-foreground mb-3 px-1">
                                                                 {method.bankAccount.iban}
                                                             </p>
                                                             <Button 
                                                                 variant="outline" 
                                                                 size="sm" 
-                                                                className="flex items-center gap-2 mx-auto font-bold" 
+                                                                className="flex items-center gap-2 mx-auto font-bold h-9 text-xs sm:text-sm" 
                                                                 onClick={() => handleCopyIban(method.bankAccount.iban)}
                                                             >
                                                                 {ibanCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
@@ -551,17 +592,18 @@ export default function CheckoutPage() {
                                                   )
                                                 )}
                                                 
-                                                <div className="pt-4">
-                                                    <p className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
+                                                <div className="pt-2 sm:pt-4">
+                                                    <p className="text-xs sm:text-sm font-bold text-muted-foreground uppercase tracking-wider">
                                                         {method.bankAccount.bankName} ({method.bankAccount.currency})
                                                     </p>
                                                 </div>
                                             </div>
-                                        ) : <div className="text-center p-4"><p className="font-medium">{method.instructions}</p></div>}
+                                        ) : <div className="text-center p-4"><p className="font-medium text-xs sm:text-sm">{method.instructions}</p></div>}
                                     </TabsContent>
                                 ))}
                             </Tabs>
-                            <div className="mt-8" id="receipt-upload-container">
+                            )}
+                            <div className="mt-6 sm:mt-8" id="receipt-upload-container">
                                 <div className="flex items-center justify-between mb-2">
                                     <Label className="text-lg font-bold flex items-center gap-2">
                                         <Upload className="h-5 w-5 text-primary" /> Subir Comprobante

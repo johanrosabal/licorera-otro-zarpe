@@ -18,42 +18,55 @@ export const useCart = () => {
 };
 
 export const CartProvider = ({ children }) => {
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const [cartItems, setCartItems] = useState([]);
     const [isInitialized, setIsInitialized] = useState(false);
     const [cartId, setCartId] = useState(null);
 
     // Effect for handling real-time updates from Firestore for logged-in users
     useEffect(() => {
+        // Do not initialize cart while authentication state is still resolving!
+        if (authLoading) {
+            setIsInitialized(false);
+            return;
+        }
+
         if (user?.uid) {
+            setIsInitialized(false);
             const cartRef = doc(db, 'carts', user.uid);
-            const unsubscribe = onSnapshot(cartRef, (doc) => {
-                if (doc.exists()) {
-                    const cartData = doc.data();
+            const unsubscribe = onSnapshot(cartRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const cartData = docSnap.data();
                     setCartItems(cartData.items || []);
-                    setCartId(doc.id);
+                    setCartId(docSnap.id);
                 } else {
                     setCartItems([]);
                     setCartId(user.uid);
                 }
                 setIsInitialized(true);
+            }, (error) => {
+                console.error("Cart snapshot error:", error);
+                setIsInitialized(true);
             });
             return () => unsubscribe();
         } else {
-            // Handle guest user cart from localStorage
+            // Handle guest user cart from localStorage (only when auth is done and user is null)
             try {
-                const storedCart = localStorage.getItem('cart');
+                const storedCart = typeof window !== 'undefined' ? localStorage.getItem('cart') : null;
                 if (storedCart) {
                     setCartItems(JSON.parse(storedCart));
+                } else {
+                    setCartItems([]);
                 }
             } catch (error) {
                 console.error("Failed to parse cart from localStorage", error);
                 localStorage.removeItem('cart');
+                setCartItems([]);
             } finally {
                 setIsInitialized(true);
             }
         }
-    }, [user]);
+    }, [user, authLoading]);
 
     // Effect for merging local cart to Firestore on login
     useEffect(() => {

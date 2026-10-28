@@ -164,13 +164,15 @@ export default function Home() {
           open={isModalOpen} 
           onOpenChange={setIsModalOpen}
       />
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-16">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 md:py-16 space-y-8 sm:space-y-12 md:space-y-16">
         {categoriesWithCounts.length > 0 && (
           <section>
-            <div className="flex justify-between items-baseline mb-6">
-              <h2 className="font-headline text-3xl md:text-4xl">Explorar Categorías</h2>
-              <Button asChild variant="link" className="text-primary uppercase text-lg font-bold">
-                  <Link href="/products">Ver todos los productos <ArrowRight className="ml-1 h-4 w-4" /></Link>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-baseline gap-2 sm:gap-4 mb-4 sm:mb-6">
+              <h2 className="font-headline text-2xl sm:text-3xl md:text-4xl">Explorar Categorías</h2>
+              <Button asChild variant="link" className="text-primary uppercase text-sm sm:text-base md:text-lg font-bold p-0 h-auto justify-start sm:justify-end">
+                  <Link href="/products" className="inline-flex items-center gap-1.5">
+                    Ver todos los productos <ArrowRight className="h-4 w-4 shrink-0" />
+                  </Link>
               </Button>
             </div>
             <CategoriesCarousel categories={categoriesWithCounts} />
@@ -179,7 +181,7 @@ export default function Home() {
 
         {(visibleProducts.length > 0 || isSearching) && (
           <section>
-              <div className="flex flex-col md:flex-row md:justify-between md:items-baseline mb-6 gap-4">
+              <div className="flex flex-col md:flex-row md:justify-between md:items-baseline mb-4 sm:mb-6 gap-4">
                   <div className="w-full">
                     <div className="relative w-full">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -220,13 +222,13 @@ export default function Home() {
                   </div>
               </div>
               {filteredGridProducts.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                   {filteredGridProducts.map((product, index) => (
                       <ProductCard key={product.id} product={product} onProductClick={() => handleProductClick(product)} priority={index < 4} />
                   ))}
                   </div>
               ) : (
-                  <div className="text-center py-16 text-muted-foreground">
+                  <div className="text-center py-12 sm:py-16 text-muted-foreground">
                       <Search className="mx-auto h-16 w-16 mb-4 opacity-50" />
                       <h3 className="text-xl font-semibold">No se encontraron resultados</h3>
                       <p>No encontramos ningún producto que coincida con &ldquo;{featuredSearchTerm}&rdquo;.</p>
@@ -245,8 +247,8 @@ export default function Home() {
 
         {promotionalProducts.length > 0 && (
           <section>
-            <h2 className="font-headline text-3xl md:text-4xl text-primary text-center mb-6">Promociones Especiales</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <h2 className="font-headline text-2xl sm:text-3xl md:text-4xl text-primary text-center mb-4 sm:mb-6">Promociones Especiales</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
               {promotionalProducts.map((product) => (
                 <div key={product.id} onClick={() => handleProductClick(product)} className="group relative overflow-hidden rounded-lg block cursor-pointer">
                   <Image
@@ -259,10 +261,10 @@ export default function Home() {
                     unoptimized
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                  <div className="absolute bottom-0 left-0 p-6 text-white">
-                    <h3 className="font-headline text-2xl">{product.name}</h3>
+                  <div className="absolute bottom-0 left-0 p-4 sm:p-6 text-white">
+                    <h3 className="font-headline text-xl sm:text-2xl">{product.name}</h3>
                     {product.hasPromotion && product.promotionPercentage && (
-                      <p className="text-lg font-bold text-accent">{product.promotionPercentage}% OFF</p>
+                      <p className="text-base sm:text-lg font-bold text-accent">{product.promotionPercentage}% OFF</p>
                     )}
                   </div>
                 </div>

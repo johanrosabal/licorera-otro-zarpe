@@ -27,7 +27,7 @@ export const getBankAccounts = async (options = {}) => {
         bankName: bankMap.get(account.bankId) || 'Banco Desconocido'
     }));
     
-    return enrichedAccounts.sort((a, b) => a.accountHolder.localeCompare(b.accountHolder));
+    return enrichedAccounts.sort((a, b) => (a.accountHolder || '').localeCompare(b.accountHolder || ''));
   } catch (error) {
     logError(error, 'getBankAccounts');
     throw error;

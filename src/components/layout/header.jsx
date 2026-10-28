@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Menu, LogOut, User as UserIcon, Shield, ListTree, ShoppingBag, Scaling, Bookmark, Warehouse, FileText, Truck, Receipt, Settings, Landmark, Wallet, CreditCard, ChevronDown, Package, PackageCheck, Users, TrendingUp, Share2, BookOpen, BarChart, Route, AlertTriangle, Heart, MessageSquare, Megaphone, Loader2, Bell } from 'lucide-react'
+import { LayoutDashboard, Menu, LogOut, User as UserIcon, Shield, ListTree, ShoppingBag, Scaling, Bookmark, Warehouse, FileText, Truck, Receipt, Settings, Landmark, Wallet, CreditCard, ChevronDown, Package, PackageCheck, Users, TrendingUp, Share2, BookOpen, BarChart, Route, AlertTriangle, Heart, MessageSquare, Megaphone, Loader2, Bell, PlayCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
@@ -28,6 +28,7 @@ import { ScrollArea } from '../ui/scroll-area'
 import Image from 'next/image'
 import { ThemeToggle } from '../theme-toggle'
 import { BrandLogo } from '../brand-logo'
+import { DemoCheckoutDialog } from '../demo-checkout-dialog'
 
 const navLinks = [
   { href: '/', label: 'Inicio' },
@@ -92,6 +93,7 @@ export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
   const [googleLoading, setGoogleLoading] = React.useState(false)
   const [isCompleteProfileOpen, setIsCompleteProfileOpen] = React.useState(false)
+  const [isDemoOpen, setIsDemoOpen] = React.useState(false)
 
   const isGoogleUser = user?.isGoogle || (typeof window !== 'undefined' && auth.currentUser?.providerData?.some(p => p.providerId === 'google.com'));
   const isMissingName = Boolean(user && (!user.name || !user.name.trim() || user.name.trim().toLowerCase() === 'usuario'));
@@ -276,36 +278,77 @@ export function Header() {
 
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
-        {/* ── Logo ── */}
-        <div className="flex h-20 items-center justify-center">
+        {/* ── DESKTOP Logo (Centered) ── */}
+        <div className="hidden md:flex h-20 items-center justify-center">
             <Link href="/" className="flex items-center gap-2">
                 <BrandLogo siteName={siteName} siteSlogan={siteSlogan} />
             </Link>
         </div>
 
-        {/* ── PUBLIC Navigation Bar ── */}
-        <div className="flex h-14 items-center justify-between border-t border-border/40">
-            {/* Mobile menu */}
-            <div className="flex flex-1 items-center justify-start">
-                <div className="md:hidden">
-                    <MobileMenu
-                        user={user} loading={loading} handleLogout={handleLogout}
-                        handleGoogleAuth={handleGoogleAuth} googleLoading={googleLoading}
-                        visibleAdminLinks={processedAdminLinks}
-                        isOpen={isMobileMenuOpen} setIsOpen={setIsMobileMenuOpen}
-                        onCartClick={() => setIsCartOpen(true)}
-                        storeLocationUrl={storeLocationUrl}
-                        siteName={siteName}
-                        siteSlogan={siteSlogan}
-                        needsProfileCompletion={needsProfileCompletion}
-                        missingFieldsLabel={missingFieldsLabel}
-                        onOpenCompleteProfile={() => setIsCompleteProfileOpen(true)}
-                    />
-                </div>
+        {/* ── MOBILE Header (Integrated Single Row) ── */}
+        <div className="flex md:hidden h-16 items-center justify-between gap-2">
+            {/* Left: Mobile hamburger menu */}
+            <div className="flex items-center">
+                <MobileMenu
+                    user={user} loading={loading} handleLogout={handleLogout}
+                    handleGoogleAuth={handleGoogleAuth} googleLoading={googleLoading}
+                    visibleAdminLinks={processedAdminLinks}
+                    isOpen={isMobileMenuOpen} setIsOpen={setIsMobileMenuOpen}
+                    onCartClick={() => setIsCartOpen(true)}
+                    storeLocationUrl={storeLocationUrl}
+                    siteName={siteName}
+                    siteSlogan={siteSlogan}
+                    needsProfileCompletion={needsProfileCompletion}
+                    missingFieldsLabel={missingFieldsLabel}
+                    onOpenCompleteProfile={() => setIsCompleteProfileOpen(true)}
+                    onOpenDemo={() => setIsDemoOpen(true)}
+                />
             </div>
 
+            {/* Center: Brand Logo */}
+            <div className="flex items-center justify-center flex-1 px-1 overflow-hidden">
+                <Link href="/" className="flex items-center justify-center">
+                    <BrandLogo siteName={siteName} siteSlogan={siteSlogan} isMobile />
+                </Link>
+            </div>
+
+            {/* Right: Actions (Theme toggle, notifications, cart/login) */}
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                {user && needsProfileCompletion && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsCompleteProfileOpen(true)}
+                    className="relative h-9 w-9 text-amber-600 dark:text-amber-400"
+                    title={`Falta ingresar tu ${missingFieldsLabel}`}
+                  >
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500" />
+                  </Button>
+                )}
+                <ThemeToggle />
+                {user ? (
+                    <Button variant="ghost" size="icon" className="relative h-9 w-9" onClick={() => setIsCartOpen(true)} aria-label="Carrito de compras">
+                        <ShoppingBag className="h-5 w-5" />
+                        {totalItems > 0 && (
+                            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold text-white bg-primary rounded-full">
+                                {totalItems}
+                            </span>
+                        )}
+                    </Button>
+                ) : (
+                    <Button asChild variant="ghost" size="sm">
+                        <Link href="/login">Ingresar</Link>
+                    </Button>
+                )}
+            </div>
+        </div>
+
+        {/* ── DESKTOP Navigation Bar ── */}
+        <div className="hidden md:flex h-14 items-center justify-between border-t border-border/40">
             {/* Center: public links only */}
-            <nav className="hidden md:flex flex-1 items-center justify-center gap-8 text-sm">
+            <nav className="flex flex-1 items-center justify-center gap-8 text-sm">
                 {navLinks.map((link) => (
                     <Link key={link.href} href={link.href}
                         className={cn('transition-colors hover:text-primary font-medium',
@@ -315,18 +358,18 @@ export function Header() {
                         {link.label}
                     </Link>
                 ))}
+                <button
+                    type="button"
+                    onClick={() => setIsDemoOpen(true)}
+                    className="inline-flex items-center gap-1.5 transition-colors hover:text-primary font-medium text-foreground/70 hover:bg-primary/5 px-2.5 py-1 rounded-md cursor-pointer"
+                >
+                    <PlayCircle className="h-4 w-4 text-primary" />
+                    <span>Demo Checkout</span>
+                </button>
             </nav>
 
             {/* Right: auth + cart */}
             <div className="flex flex-1 items-center justify-end gap-2">
-                {storeLocationUrl && (
-                    <Button asChild variant="ghost" size="sm" className="hidden lg:flex gap-2 text-primary font-bold">
-                        <a href={storeLocationUrl} target="_blank" rel="noopener noreferrer">
-                            <Route className="h-4 w-4" />
-                            <span>Tienda Física</span>
-                        </a>
-                    </Button>
-                )}
                 <AuthButtons 
                     user={user} 
                     loading={loading} 
@@ -339,36 +382,6 @@ export function Header() {
                     missingFieldsLabel={missingFieldsLabel}
                     onOpenCompleteProfile={() => setIsCompleteProfileOpen(true)}
                 />
-                <div className="md:hidden flex items-center gap-2">
-                    {user && needsProfileCompletion && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsCompleteProfileOpen(true)}
-                        className="relative h-9 w-9 text-amber-600 dark:text-amber-400"
-                        title={`Falta ingresar tu ${missingFieldsLabel}`}
-                      >
-                        <Bell className="h-5 w-5" />
-                        <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-                        <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500" />
-                      </Button>
-                    )}
-                    <ThemeToggle />
-                    {user ? (
-                        <Button variant="ghost" onClick={() => setIsCartOpen(true)}>
-                            <ShoppingBag className="h-5 w-5" />
-                            {totalItems > 0 && (
-                                <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-primary rounded-full">
-                                    {totalItems}
-                                </span>
-                            )}
-                        </Button>
-                    ) : (
-                        <Button asChild variant="ghost">
-                            <Link href="/login">Ingresar</Link>
-                        </Button>
-                    )}
-                </div>
             </div>
         </div>
       </div>
@@ -436,6 +449,12 @@ export function Header() {
         open={isCompleteProfileOpen}
         onOpenChange={setIsCompleteProfileOpen}
         user={user}
+      />
+
+      {/* ── Dialog Demo Checkout Video ── */}
+      <DemoCheckoutDialog
+        open={isDemoOpen}
+        onOpenChange={setIsDemoOpen}
       />
     </header>
   )
@@ -573,7 +592,8 @@ const MobileMenu = ({
   siteSlogan, 
   needsProfileCompletion, 
   missingFieldsLabel, 
-  onOpenCompleteProfile 
+  onOpenCompleteProfile,
+  onOpenDemo,
 }) => {
     const pathname = usePathname();
     const handleLinkClick = () => setIsOpen(false);
@@ -618,14 +638,17 @@ const MobileMenu = ({
                         {link.label}
                     </Link>
                     ))}
-                    {storeLocationUrl && (
-                        <Button asChild variant="secondary" className="w-full justify-start mt-2">
-                            <a href={storeLocationUrl} target="_blank" rel="noopener noreferrer" onClick={handleLinkClick}>
-                                <Route className="mr-2 h-4 w-4 text-primary" />
-                                Localización de Tienda
-                            </a>
-                        </Button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsOpen(false);
+                            if (onOpenDemo) onOpenDemo();
+                        }}
+                        className="flex items-center gap-2 text-lg font-medium text-foreground hover:text-primary text-left py-1 cursor-pointer"
+                    >
+                        <PlayCircle className="h-5 w-5 text-primary" />
+                        <span>Demo Checkout</span>
+                    </button>
                 </nav>
                 <div className="border-t pt-4 mt-4 space-y-2">
                     {!loading && (

@@ -11,8 +11,8 @@ export const BrandLogo = ({
     
     return (
         <div className={cn(
-            "flex items-center group whitespace-nowrap", 
-            isMobile ? "scale-75 origin-left" : "",
+            "flex items-center group whitespace-nowrap justify-center", 
+            isMobile ? "origin-center" : "",
             isSplash ? "mb-4" : ""
         )}>
             <div className={cn(

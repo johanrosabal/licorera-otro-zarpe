@@ -23,7 +23,7 @@ export function CartSheet({ open, onOpenChange }) {
 
     const handleProceedToCheckout = () => {
         onOpenChange(false);
-        router.push(user ? "/checkout" : "/login?redirect=/checkout");
+        router.push(user ? "/checkout/" : "/login?redirect=/checkout/");
     };
     
     return (

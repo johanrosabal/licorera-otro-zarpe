@@ -12,7 +12,8 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
 
-  const defaultCoords = initialCoords || { lat: 9.9333, lng: -84.0833 };
+  const isValidCoord = (c) => c && typeof c.lat === 'number' && !isNaN(c.lat) && typeof c.lng === 'number' && !isNaN(c.lng);
+  const defaultCoords = isValidCoord(initialCoords) ? initialCoords : { lat: 9.9333, lng: -84.0833 };
   const [position, setPosition] = useState(defaultCoords);
   const [searchQuery, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -118,9 +119,9 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
   };
 
   return (
-    <Card className="w-full overflow-hidden border-2 border-primary/20 shadow-xl">
-      <CardContent className="p-0 relative">
-        <div className="p-4 bg-muted/50 border-b flex flex-col gap-2">
+    <div className="w-full overflow-hidden bg-card">
+      <div className="p-0 relative">
+        <div className="p-2.5 sm:p-4 bg-muted/50 border-b flex flex-col gap-2">
           <form onSubmit={handleSearch} className="flex gap-2 relative">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -128,11 +129,11 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
                 placeholder="Busca tu dirección..."
                 value={searchQuery}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 h-12"
+                className="pl-9 h-10 sm:h-12 text-sm"
               />
             </div>
-            <Button type="submit" disabled={isSearching}>
-              {isSearching ? <Loader2 className="animate-spin" /> : 'BUSCAR'}
+            <Button type="submit" disabled={isSearching} className="h-10 sm:h-12 text-xs sm:text-sm font-bold">
+              {isSearching ? <Loader2 className="animate-spin h-4 w-4" /> : 'BUSCAR'}
             </Button>
 
             {searchResults.length > 0 && (
@@ -141,7 +142,7 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
                   <button
                     key={`res-${i}`}
                     type="button"
-                    className="w-full text-left p-3 hover:bg-muted text-sm border-b last:border-0 rounded-md transition-colors"
+                    className="w-full text-left p-3 hover:bg-muted text-xs sm:text-sm border-b last:border-0 rounded-md transition-colors"
                     onClick={() => selectSearchResult(result)}
                   >
                     {result.display_name}
@@ -152,7 +153,7 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
           </form>
         </div>
 
-        <div className="h-[400px] w-full relative bg-muted">
+        <div className="h-[280px] sm:h-[400px] w-full relative bg-muted">
           {!mapReady && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground z-10">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -163,17 +164,19 @@ export function LocationPicker({ initialCoords, onConfirm, onCancel }) {
           <div ref={mapContainerRef} className="h-full w-full z-0" />
         </div>
 
-        <div className="p-4 bg-background border-t flex gap-2">
+        <div className="p-3 sm:p-4 bg-background border-t flex gap-2">
           {onCancel && (
-            <Button variant="outline" className="flex-1 font-bold h-12" onClick={onCancel}>
-              <X className="mr-2 h-4 w-4" /> CANCELAR
+            <Button variant="outline" className="flex-1 font-bold h-10 sm:h-12 text-xs sm:text-sm" onClick={onCancel}>
+              <X className="mr-1.5 h-4 w-4" /> CANCELAR
             </Button>
           )}
-          <Button className={cn("flex-1 font-black h-12 text-lg shadow-lg", !onCancel && "w-full")} onClick={() => onConfirm(position)}>
-            <Check className="mr-2 h-5 w-5" /> CONFIRMAR UBICACIÓN
+          <Button className={cn("flex-1 font-black h-10 sm:h-12 text-xs sm:text-base shadow-lg", !onCancel && "w-full")} onClick={() => onConfirm(position)}>
+            <Check className="mr-1.5 h-4 w-4" /> CONFIRMAR UBICACIÓN
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+export default LocationPicker;
